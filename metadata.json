@@ -1,0 +1,6 @@
+{
+  "name": "Study Course Auth Portal",
+  "description": "Premium authentication module for a modern study course platform, featuring custom dark glassmorphism styling, a mobile-first responsive layout, comprehensive input validations, and simulated email verification workflows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,373 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable security helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // User Profile schema rules
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isOwner(userId);
+    }
+
+    // Course Catalogue rules (read allowed for discovery, write allowed for authenticated setup/seeds)
+    match /courses/{courseId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Slide banner advertisement rules
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Instructors bios and statistics
+    match /instructors/{instructorId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Curriculum chapters and lessons breakdown
+    match /courseCurriculum/{chapterId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Student reviews submitted for courses
+    match /courseReviews/{reviewId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Coupons for pricing checkouts
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Special offers
+    match /offers/{offerId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Course benefits checklist
+    match /courseBenefits/{benefitId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Purchases
+    match /purchases/{purchaseId} {
+      allow read, list, get: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn();
+    }
+
+    // Payment Methods
+    match /paymentMethods/{methodId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Payments
+    match /payments/{paymentId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Transactions ledger
+    match /transactions/{transactionId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Progress and enrollment collections
+    match /myCourses/{courseId} {
+      allow read, list, get: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+
+    match /courseProgress/{courseId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /lessonProgress/{progressId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /learningHistory/{historyId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Premium learning system collections
+    match /courseLessons/{lessonId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /lessonVideos/{videoId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /lessonResources/{resourceId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /lessonNotes/{noteId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /lessonBookmarks/{bookmarkId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /watchHistory/{historyId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Premium Study Resources and Download Center
+    match /courseResources/{resourceId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /downloads/{downloadId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /offlineResources/{resourceId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /readingProgress/{progressId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Quiz & Assessment System security rules
+    match /quizzes/{quizId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /questions/{questionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /quizAttempts/{attemptId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /quizResults/{resultId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /leaderboards/{entryId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /achievements/{achievementId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Certificate and Course Completion System rules
+    match /certificates/{certificateId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /certificateTemplates/{templateId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /certificateVerification/{verificationId} {
+      allow read: if true; // Publicly readable for verification
+      allow write: if isSignedIn();
+    }
+
+    match /courseCompletion/{completionId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Premium Notifications & Announcement System rules
+    match /notifications/{notificationId} {
+      allow read, list, get: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /notificationSettings/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+
+    match /notificationHistory/{historyId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Premium Live Classes System rules
+    match /liveClasses/{classId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /liveAttendance/{attendanceId} {
+      allow read, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn();
+    }
+
+    match /liveChat/{chatId} {
+      allow read, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /liveRecordings/{recordingId} {
+      allow read, list: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /liveReminders/{reminderId} {
+      allow read, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid && (resource == null || resource.data.userId == request.auth.uid);
+    }
+
+    // Premium Student Community & Discussion System rules
+    match /communityPosts/{postId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (request.resource.data.userId == request.auth.uid || request.auth.email == 'wahid23hasan@gmail.com' || request.auth.email.matches('.*instructor.*'));
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.email == 'wahid23hasan@gmail.com' || request.auth.email.matches('.*instructor.*'));
+    }
+
+    match /communityReplies/{replyId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (request.resource.data.userId == request.auth.uid || request.auth.email == 'wahid23hasan@gmail.com' || request.auth.email.matches('.*instructor.*'));
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.email == 'wahid23hasan@gmail.com' || request.auth.email.matches('.*instructor.*'));
+    }
+
+    match /communityLikes/{likeId} {
+      allow read: if true;
+      allow create, delete: if isSignedIn();
+    }
+
+    match /communityBookmarks/{bookmarkId} {
+      allow list, get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create, delete: if isSignedIn();
+    }
+
+    match /communityReports/{reportId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+    }
+
+    match /userReputation/{userId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+    
+    // Gamification System rules
+    match /userXP/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+    match /dailyStreak/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+    match /badges/{badgeId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Only admin can create badges
+    }
+    match /dailyGoals/{goalId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    match /rewardHistory/{historyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // AI Chat History
+    match /chatHistory/{sessionId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      match /messages/{messageId} {
+        allow read: if isSignedIn(); // Messages inherit protection conceptually
+        allow create: if isSignedIn();
+        allow update, delete: if false; // Messages are immutable
+      }
+    }
+  }
+}

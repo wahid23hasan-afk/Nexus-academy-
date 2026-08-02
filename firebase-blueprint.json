@@ -1,0 +1,1262 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Details of the registered academic student profile",
+      "type": "object",
+      "properties": {
+        "fullName": {
+          "type": "string",
+          "description": "Legal/academic name of the student"
+        },
+        "username": {
+          "type": "string",
+          "description": "Unique academic matrix username"
+        },
+        "email": {
+          "type": "string",
+          "description": "Primary authenticated email"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Optional telephone contact"
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Optional customized portrait avatar URL"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of session initiation"
+        }
+      },
+      "required": ["fullName", "username", "email"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Academic course offered inside the catalog",
+      "type": "object",
+      "properties": {
+        "courseId": {
+          "type": "string",
+          "description": "Unique courses collection locator"
+        },
+        "title": {
+          "type": "string",
+          "description": "Full course title"
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "Short subtitle overview"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed syllabus overview"
+        },
+        "thumbnail": {
+          "type": "string",
+          "description": "Image URL for card grid preview"
+        },
+        "banner": {
+          "type": "string",
+          "description": "Widescreen spotlight banner image URL"
+        },
+        "instructor": {
+          "type": "string",
+          "description": "Full academic name of course instructor"
+        },
+        "instructorId": {
+          "type": "string",
+          "description": "Reference identifier to the instructor entity"
+        },
+        "category": {
+          "type": "string",
+          "description": "Niche field categorization (e.g. Web Development)"
+        },
+        "price": {
+          "type": "number",
+          "description": "Base course original pricing"
+        },
+        "discountPrice": {
+          "type": "number",
+          "description": "Optional active campaign promotional price"
+        },
+        "rating": {
+          "type": "number",
+          "description": "Verified student feedback average rating score"
+        },
+        "reviewCount": {
+          "type": "number",
+          "description": "Total reviews submitted"
+        },
+        "students": {
+          "type": "number",
+          "description": "Total academic enrollments count"
+        },
+        "language": {
+          "type": "string",
+          "description": "Teaching linguistic medium (e.g. Bangla)"
+        },
+        "duration": {
+          "type": "string",
+          "description": "Syllabus scope duration (e.g. 60 hours)"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["Beginner", "Intermediate", "Advanced", "All Levels"],
+          "description": "Student prerequisites level"
+        },
+        "isFeatured": {
+          "type": "boolean",
+          "description": "Toggles catalog primary featuring"
+        },
+        "isBestSeller": {
+          "type": "boolean",
+          "description": "Toggles bestseller badges"
+        },
+        "isNew": {
+          "type": "boolean",
+          "description": "Toggles newest badge highlighting"
+        },
+        "learningOutcomes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "skillsGained": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "requirements": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "lastUpdated": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["courseId", "title", "instructor", "category", "price", "rating", "students", "language", "duration", "level"]
+    },
+    "Banner": {
+      "title": "Banner Slide",
+      "description": "Spotlight campaign billboard auto sliding slides",
+      "type": "object",
+      "properties": {
+        "bannerId": {
+          "type": "string"
+        },
+        "imageUrl": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "subtitle": {
+          "type": "string"
+        },
+        "courseId": {
+          "type": "string"
+        },
+        "accentColor": {
+          "type": "string"
+        }
+      },
+      "required": ["bannerId", "imageUrl", "title", "subtitle"]
+    },
+    "Instructor": {
+      "title": "Instructor",
+      "description": "Verified academic profile representing a faculty tutor",
+      "type": "object",
+      "properties": {
+        "instructorId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "photoURL": {
+          "type": "string"
+        },
+        "bio": {
+          "type": "string"
+        },
+        "experience": {
+          "type": "string"
+        },
+        "totalStudents": {
+          "type": "number"
+        },
+        "totalCourses": {
+          "type": "number"
+        },
+        "averageRating": {
+          "type": "number"
+        },
+        "isVerified": {
+          "type": "boolean"
+        }
+      },
+      "required": ["instructorId", "name", "photoURL", "bio", "isVerified"]
+    },
+    "CurriculumChapter": {
+      "title": "Curriculum Chapter",
+      "description": "Chapter breakdown including individual video/text lessons",
+      "type": "object",
+      "properties": {
+        "chapterId": {
+          "type": "string"
+        },
+        "courseId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "sequenceOrder": {
+          "type": "number"
+        },
+        "lessonsCount": {
+          "type": "number"
+        },
+        "totalDuration": {
+          "type": "string"
+        },
+        "lessons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lessonId": { "type": "string" },
+              "title": { "type": "string" },
+              "duration": { "type": "string" },
+              "isPreviewAllowed": { "type": "boolean" },
+              "sequenceOrder": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["chapterId", "courseId", "title", "sequenceOrder", "lessons"]
+    },
+    "CourseReview": {
+      "title": "Course Review",
+      "description": "Feedback reviews logged by students for courses",
+      "type": "object",
+      "properties": {
+        "reviewId": {
+          "type": "string"
+        },
+        "courseId": {
+          "type": "string"
+        },
+        "studentName": {
+          "type": "string"
+        },
+        "studentPhotoURL": {
+          "type": "string"
+        },
+        "rating": {
+          "type": "number"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": ["reviewId", "courseId", "studentName", "rating", "comment"]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Discount coupon code data",
+      "type": "object",
+      "properties": {
+        "couponId": { "type": "string" },
+        "code": { "type": "string" },
+        "discountType": { "type": "string" },
+        "discountValue": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "expiryDate": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["couponId", "code", "discountType", "discountValue", "isActive"]
+    },
+    "Offer": {
+      "title": "Offer",
+      "description": "Special active promotional campaign offer",
+      "type": "object",
+      "properties": {
+        "offerId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "discountPercent": { "type": "number" },
+        "badgeText": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["offerId", "title", "discountPercent", "isActive"]
+    },
+    "CourseBenefit": {
+      "title": "Course Benefit",
+      "description": "Premium benefits showing what students will get",
+      "type": "object",
+      "properties": {
+        "benefitId": { "type": "string" },
+        "title": { "type": "string" },
+        "iconName": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["benefitId", "title", "iconName", "description"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Stores user purchases of courses",
+      "type": "object",
+      "properties": {
+        "purchaseId": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "amount": { "type": "number" },
+        "discount": { "type": "number" },
+        "coupon": { "type": "string" },
+        "status": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "purchaseDate": { "type": "string" }
+      },
+      "required": ["purchaseId", "userId", "courseId", "paymentMethod", "amount", "status", "transactionId", "purchaseDate"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Stores payment gateway session details",
+      "type": "object",
+      "properties": {
+        "paymentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["paymentId", "userId", "courseId", "amount", "paymentMethod", "transactionId", "status", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction ledger entry",
+      "type": "object",
+      "properties": {
+        "transactionId": { "type": "string" },
+        "purchaseId": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["transactionId", "purchaseId", "amount", "paymentMethod", "status", "timestamp"]
+    },
+    "CourseLesson": {
+      "title": "Course Lesson",
+      "description": "Information about a specific lesson in a course",
+      "type": "object",
+      "properties": {
+        "lessonId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "chapterId": { "type": "string" },
+        "title": { "type": "string" },
+        "duration": { "type": "string" },
+        "sequenceOrder": { "type": "number" },
+        "isPreviewAllowed": { "type": "boolean" }
+      },
+      "required": ["lessonId", "courseId", "chapterId", "title", "duration", "sequenceOrder", "isPreviewAllowed"]
+    },
+    "LessonVideo": {
+      "title": "Lesson Video",
+      "description": "Video player link and parameters for a lesson",
+      "type": "object",
+      "properties": {
+        "videoId": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "duration": { "type": "number" }
+      },
+      "required": ["videoId", "lessonId", "courseId", "videoUrl", "duration"]
+    },
+    "LessonResource": {
+      "title": "Lesson Resource",
+      "description": "Downloadable lesson files and attachments",
+      "type": "object",
+      "properties": {
+        "resourceId": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "downloadUrl": { "type": "string" },
+        "fileSize": { "type": "string" }
+      },
+      "required": ["resourceId", "lessonId", "courseId", "title", "type", "downloadUrl", "fileSize"]
+    },
+    "LessonNote": {
+      "title": "Lesson Note",
+      "description": "Student generated notes with video timeline marker",
+      "type": "object",
+      "properties": {
+        "noteId": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "noteTitle": { "type": "string" },
+        "noteContent": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["noteId", "userId", "courseId", "lessonId", "timestamp", "noteTitle", "noteContent", "createdAt"]
+    },
+    "LessonBookmark": {
+      "title": "Lesson Bookmark",
+      "description": "Bookmarked timeline position for a lesson",
+      "type": "object",
+      "properties": {
+        "bookmarkId": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "label": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["bookmarkId", "userId", "courseId", "lessonId", "timestamp", "label", "createdAt"]
+    },
+    "WatchHistory": {
+      "title": "Watch History",
+      "description": "Tracking user watch positions and learning analytics",
+      "type": "object",
+      "properties": {
+        "historyId": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "lastWatchedPosition": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "watchPercentage": { "type": "number" },
+        "lastOpenedTime": { "type": "string" },
+        "totalLearningTime": { "type": "number" }
+      },
+      "required": ["historyId", "userId", "courseId", "lessonId", "lastWatchedPosition", "completed", "watchPercentage", "lastOpenedTime", "totalLearningTime"]
+    },
+    "StudyResource": {
+      "title": "Study Resource",
+      "description": "Premium study materials related to lessons and chapters",
+      "type": "object",
+      "properties": {
+        "resourceId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "chapterId": { "type": "string" },
+        "chapterTitle": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "lessonTitle": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "downloadUrl": { "type": "string" },
+        "fileSize": { "type": "string" },
+        "uploadDate": { "type": "string" },
+        "downloadCount": { "type": "number" },
+        "shortDescription": { "type": "string" }
+      },
+      "required": ["resourceId", "courseId", "chapterId", "lessonId", "title", "type", "downloadUrl", "fileSize", "uploadDate", "downloadCount"]
+    },
+    "ResourceDownload": {
+      "title": "Resource Download",
+      "description": "User specific downloaded files meta queue tracking",
+      "type": "object",
+      "properties": {
+        "downloadId": { "type": "string" },
+        "resourceId": { "type": "string" },
+        "resourceTitle": { "type": "string" },
+        "resourceType": { "type": "string" },
+        "status": { "type": "string" },
+        "progress": { "type": "number" },
+        "downloadSpeed": { "type": "string" },
+        "remainingTime": { "type": "string" },
+        "fileSize": { "type": "string" }
+      },
+      "required": ["downloadId", "resourceId", "resourceTitle", "resourceType", "status", "progress", "downloadSpeed", "remainingTime", "fileSize"]
+    },
+    "OfflineResource": {
+      "title": "Offline Resource",
+      "description": "Files physically persisted in local cache storage",
+      "type": "object",
+      "properties": {
+        "resourceId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "fileSize": { "type": "string" },
+        "downloadedAt": { "type": "string" },
+        "localDataUrl": { "type": "string" }
+      },
+      "required": ["resourceId", "courseId", "title", "type", "fileSize", "downloadedAt", "localDataUrl"]
+    },
+    "ReadingProgress": {
+      "title": "Reading Progress",
+      "description": "Saved scroll progress and page markers for PDFs",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "resourceId": { "type": "string" },
+        "lastReadPage": { "type": "number" },
+        "totalPages": { "type": "number" },
+        "progressPercent": { "type": "number" },
+        "bookmarks": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "resourceId", "lastReadPage", "totalPages", "progressPercent", "bookmarks", "updatedAt"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "Quiz assessment matching a course, chapter, or lesson",
+      "type": "object",
+      "properties": {
+        "quizId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "chapterId": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "description": { "type": "string" },
+        "totalQuestions": { "type": "number" },
+        "passingScore": { "type": "number" },
+        "timeLimit": { "type": "number" },
+        "allowPause": { "type": "boolean" },
+        "maxRetries": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["quizId", "courseId", "title", "type", "totalQuestions", "passingScore", "timeLimit"]
+    },
+    "QuizQuestion": {
+      "title": "Quiz Question",
+      "description": "An individual academic evaluation question",
+      "type": "object",
+      "properties": {
+        "questionId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "type": { "type": "string" },
+        "questionText": { "type": "string" },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "correctAnswer": { "type": "string" },
+        "explanation": { "type": "string" },
+        "points": { "type": "number" },
+        "sequenceOrder": { "type": "number" }
+      },
+      "required": ["questionId", "quizId", "type", "questionText", "correctAnswer", "points", "sequenceOrder"]
+    },
+    "QuizAttempt": {
+      "title": "Quiz Attempt",
+      "description": "Active student in-progress quiz session tracking state",
+      "type": "object",
+      "properties": {
+        "attemptId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "userId": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "status": { "type": "string" },
+        "currentQuestionIndex": { "type": "number" },
+        "answers": { "type": "object" },
+        "flaggedForReview": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "timeLeft": { "type": "number" }
+      },
+      "required": ["attemptId", "quizId", "userId", "startedAt", "status", "answers"]
+    },
+    "QuizResult": {
+      "title": "Quiz Result",
+      "description": "Completed student evaluation score report",
+      "type": "object",
+      "properties": {
+        "resultId": { "type": "string" },
+        "attemptId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "score": { "type": "number" },
+        "totalPoints": { "type": "number" },
+        "percentage": { "type": "number" },
+        "passed": { "type": "boolean" },
+        "correctCount": { "type": "number" },
+        "wrongCount": { "type": "number" },
+        "skippedCount": { "type": "number" },
+        "timeTaken": { "type": "number" },
+        "completedAt": { "type": "string" }
+      },
+      "required": ["resultId", "attemptId", "quizId", "userId", "score", "totalPoints", "percentage", "passed", "completedAt"]
+    },
+    "LeaderboardEntry": {
+      "title": "Leaderboard Entry",
+      "description": "High scores matching quizzes representing rank leaders",
+      "type": "object",
+      "properties": {
+        "entryId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "userId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentPhotoURL": { "type": "string" },
+        "score": { "type": "number" },
+        "percentage": { "type": "number" },
+        "completionTime": { "type": "number" },
+        "completedAt": { "type": "string" }
+      },
+      "required": ["entryId", "quizId", "courseId", "userId", "studentName", "score", "percentage", "completionTime", "completedAt"]
+    },
+    "AchievementBadge": {
+      "title": "Achievement Badge",
+      "description": "Unlocked milestones and reward badges",
+      "type": "object",
+      "properties": {
+        "achievementId": { "type": "string" },
+        "userId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "badgeType": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "unlockedAt": { "type": "string" }
+      },
+      "required": ["achievementId", "userId", "courseId", "badgeType", "title", "description", "unlockedAt"]
+    },
+    "Certificate": {
+      "title": "Certificate",
+      "description": "Premium graduation certificates issued for course completion",
+      "type": "object",
+      "properties": {
+        "certificateId": { "type": "string" },
+        "userId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "courseId": { "type": "string" },
+        "courseName": { "type": "string" },
+        "instructorName": { "type": "string" },
+        "completionDate": { "type": "string", "format": "date-time" },
+        "issueDate": { "type": "string", "format": "date-time" },
+        "verificationId": { "type": "string" },
+        "isVerified": { "type": "boolean" },
+        "qrCodePlaceholderUrl": { "type": "string" },
+        "signaturePlaceholderUrl": { "type": "string" },
+        "templateId": { "type": "string" }
+      },
+      "required": ["certificateId", "userId", "studentName", "courseId", "courseName", "instructorName", "completionDate", "issueDate", "verificationId", "isVerified"]
+    },
+    "CertificateTemplate": {
+      "title": "Certificate Template",
+      "description": "Styling presets and branding templates for certificates",
+      "type": "object",
+      "properties": {
+        "templateId": { "type": "string" },
+        "name": { "type": "string" },
+        "styleConfig": { "type": "object" }
+      },
+      "required": ["templateId", "name", "styleConfig"]
+    },
+    "CertificateVerification": {
+      "title": "Certificate Verification",
+      "description": "Public records ledger for verifying student credentials",
+      "type": "object",
+      "properties": {
+        "verificationId": { "type": "string" },
+        "certificateId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "courseName": { "type": "string" },
+        "issueDate": { "type": "string", "format": "date-time" },
+        "verificationStatus": { "type": "string", "enum": ["valid", "revoked", "pending"] },
+        "institution": { "type": "string" }
+      },
+      "required": ["verificationId", "certificateId", "studentName", "courseName", "issueDate", "verificationStatus", "institution"]
+    },
+    "CourseCompletion": {
+      "title": "Course Completion",
+      "description": "Historical logs tracking courses that students completely satisfied requirements for",
+      "type": "object",
+      "properties": {
+        "completionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "lessonsCompleted": { "type": "number" },
+        "totalLessons": { "type": "number" },
+        "quizzesPassedCount": { "type": "number" },
+        "totalQuizzesCount": { "type": "number" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" }
+      },
+      "required": ["completionId", "userId", "courseId", "lessonsCompleted", "totalLessons", "quizzesPassedCount", "totalQuizzesCount", "completedAt", "status"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notifications sent to specific students",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "category": { "type": "string", "enum": ["unread", "read", "payment", "learning", "courses", "announcements", "promotions"] },
+        "type": { "type": "string", "enum": ["New Course", "Course Update", "New Lesson", "Live Class Reminder", "Quiz Reminder", "Assignment Reminder", "Payment Success", "Certificate Available", "Promotional Offer", "General Announcement", "Maintenance Notice"] },
+        "unread": { "type": "boolean" },
+        "relatedPage": { "type": "string" },
+        "targetId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["notificationId", "userId", "title", "message", "category", "type", "unread", "createdAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Global premium announcement banner notices",
+      "type": "object",
+      "properties": {
+        "announcementId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "priority": { "type": "string", "enum": ["normal", "high", "emergency"] },
+        "isActive": { "type": "boolean" },
+        "link": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["announcementId", "title", "message", "priority", "isActive", "createdAt"]
+    },
+    "NotificationSetting": {
+      "title": "Notification Setting",
+      "description": "User custom subscription and push preferences",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "marketingNotifications": { "type": "boolean" },
+        "courseUpdates": { "type": "boolean" },
+        "quizReminders": { "type": "boolean" },
+        "liveClassAlerts": { "type": "boolean" },
+        "certificateAlerts": { "type": "boolean" },
+        "generalAnnouncements": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "marketingNotifications", "courseUpdates", "quizReminders", "liveClassAlerts", "certificateAlerts", "generalAnnouncements", "updatedAt"]
+    },
+    "NotificationHistory": {
+      "title": "Notification History",
+      "description": "Delivery tracking for pushes and user receipts",
+      "type": "object",
+      "properties": {
+        "historyId": { "type": "string" },
+        "userId": { "type": "string" },
+        "notificationId": { "type": "string" },
+        "deliveryType": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["historyId", "userId", "notificationId", "deliveryType", "status", "timestamp"]
+    },
+    "LiveClass": {
+      "title": "Live Class",
+      "description": "Details of an interactive premium academic live class",
+      "type": "object",
+      "properties": {
+        "classId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "instructor": { "type": "string" },
+        "instructorPhoto": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "requirements": { "type": "array", "items": { "type": "string" } },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "duration": { "type": "number" },
+        "status": { "type": "string" },
+        "thumbnail": { "type": "string" },
+        "banner": { "type": "string" },
+        "streamUrl": { "type": "string" },
+        "recordingUrl": { "type": "string" },
+        "notesUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["classId", "courseId", "title", "instructor", "startTime", "endTime", "duration", "status"]
+    },
+    "LiveAttendance": {
+      "title": "Live Attendance",
+      "description": "Student real-time attendance registration log for live classes",
+      "type": "object",
+      "properties": {
+        "attendanceId": { "type": "string" },
+        "classId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "joinTime": { "type": "string", "format": "date-time" },
+        "leaveTime": { "type": "string", "format": "date-time" },
+        "duration": { "type": "number" },
+        "percentage": { "type": "number" },
+        "status": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["attendanceId", "classId", "userId", "userName", "joinTime", "duration", "percentage", "status"]
+    },
+    "LiveChatMessage": {
+      "title": "Live Chat Message",
+      "description": "Real-time message inside a live class session workspace chat",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "classId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isInstructor": { "type": "boolean" }
+      },
+      "required": ["classId", "userId", "userName", "message", "timestamp", "isInstructor"]
+    },
+    "LiveReminder": {
+      "title": "Live Class Reminder",
+      "description": "Notification subscriptions for upcoming classes",
+      "type": "object",
+      "properties": {
+        "reminderId": { "type": "string" },
+        "classId": { "type": "string" },
+        "userId": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reminderId", "classId", "userId", "enabled", "createdAt"]
+    },
+    "CommunityPost": {
+      "title": "Community Post",
+      "description": "A student or instructor forum question or post",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "courseId": { "type": "string" },
+        "courseTitle": { "type": "string" },
+        "chapterId": { "type": "string" },
+        "lessonId": { "type": "string" },
+        "lessonTitle": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "likesCount": { "type": "number" },
+        "helpfulCount": { "type": "number" },
+        "heartCount": { "type": "number" },
+        "repliesCount": { "type": "number" },
+        "viewsCount": { "type": "number" },
+        "isInstructorPost": { "type": "boolean" },
+        "isPinned": { "type": "boolean" },
+        "isLocked": { "type": "boolean" },
+        "isReported": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "userId", "userName", "title", "description", "createdAt", "updatedAt"]
+    },
+    "CommunityReply": {
+      "title": "Community Reply",
+      "description": "An answer or a nested comment inside a community post",
+      "type": "object",
+      "properties": {
+        "replyId": { "type": "string" },
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "message": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "isBestAnswer": { "type": "boolean" },
+        "isInstructorReply": { "type": "boolean" },
+        "parentId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["replyId", "postId", "userId", "userName", "message", "createdAt", "updatedAt"]
+    },
+    "CommunityLike": {
+      "title": "Community Like",
+      "description": "User reaction to a post or response",
+      "type": "object",
+      "properties": {
+        "likeId": { "type": "string" },
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["like", "helpful", "heart"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["likeId", "postId", "userId", "type", "createdAt"]
+    },
+    "CommunityBookmark": {
+      "title": "Community Bookmark",
+      "description": "Bookmarks of posts by users",
+      "type": "object",
+      "properties": {
+        "bookmarkId": { "type": "string" },
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bookmarkId", "postId", "userId", "createdAt"]
+    },
+    "CommunityReport": {
+      "title": "Community Report",
+      "description": "Report of spam or rule violations",
+      "type": "object",
+      "properties": {
+        "reportId": { "type": "string" },
+        "postId": { "type": "string" },
+        "replyId": { "type": "string" },
+        "userId": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reportId", "userId", "reason", "status", "createdAt"]
+    },
+    "UserReputation": {
+      "title": "User Reputation",
+      "description": "User community involvement tracking metrics and points",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "totalQuestions": { "type": "number" },
+        "totalAnswers": { "type": "number" },
+        "reputationPoints": { "type": "number" },
+        "badges": { "type": "array", "items": { "type": "string" } },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "reputationPoints", "updatedAt"]
+    },
+    "UserXP": {
+      "title": "User XP Profile",
+      "description": "Gamification profile for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "totalXP": { "type": "number" },
+        "currentLevel": { "type": "number" },
+        "rank": { "type": "string" },
+        "learningPoints": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "totalXP", "currentLevel", "rank", "learningPoints", "updatedAt"]
+    },
+    "DailyStreak": {
+      "title": "Daily Streak",
+      "description": "User daily study streak tracking",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "currentStreak": { "type": "number" },
+        "longestStreak": { "type": "number" },
+        "lastActivityDate": { "type": "string" },
+        "todayStudyMinutes": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "currentStreak", "longestStreak", "todayStudyMinutes", "updatedAt"]
+    },
+    "Badge": {
+      "title": "Gamification Badge",
+      "description": "Available badges in the system",
+      "type": "object",
+      "properties": {
+        "badgeId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "icon": { "type": "string" },
+        "requiredXP": { "type": "number" }
+      },
+      "required": ["badgeId", "name", "description", "icon", "requiredXP"]
+    },
+    "DailyGoal": {
+      "title": "Daily Goal",
+      "description": "Daily goal for a user",
+      "type": "object",
+      "properties": {
+        "goalId": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string" },
+        "progress": { "type": "number" },
+        "target": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "xpReward": { "type": "number" }
+      },
+      "required": ["goalId", "userId", "date", "type", "progress", "target", "completed", "xpReward"]
+    },
+    "RewardHistory": {
+      "title": "Reward History",
+      "description": "History of XP and rewards earned",
+      "type": "object",
+      "properties": {
+        "historyId": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["historyId", "userId", "type", "amount", "description", "createdAt"]
+    },
+    "ChatSession": {
+      "title": "AI Chat Session",
+      "description": "A conversation session with the AI Study Assistant",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "AI Chat Message",
+      "description": "A single message within an AI Chat Session",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["role", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Access to registered student profile"
+    },
+    "/courses/{courseId}": {
+      "schema": "Course",
+      "description": "Catalog of all online academy programs"
+    },
+    "/banners/{bannerId}": {
+      "schema": "Banner",
+      "description": "Highlight banner advertisements"
+    },
+    "/instructors/{instructorId}": {
+      "schema": "Instructor",
+      "description": "Instructor bios and statistics"
+    },
+    "/courseCurriculum/{chapterId}": {
+      "schema": "CurriculumChapter",
+      "description": "Syllabus details for courses"
+    },
+    "/courseReviews/{reviewId}": {
+      "schema": "CourseReview",
+      "description": "Public feedback reviews"
+    },
+    "/coupons/{couponId}": {
+      "schema": "Coupon",
+      "description": "Catalog of discount coupons"
+    },
+    "/offers/{offerId}": {
+      "schema": "Offer",
+      "description": "Promotional campaign offers"
+    },
+    "/courseBenefits/{benefitId}": {
+      "schema": "CourseBenefit",
+      "description": "Premium dynamic benefit cards"
+    },
+    "/purchases/{purchaseId}": {
+      "schema": "Purchase",
+      "description": "User course enrollment and purchase purchases catalog"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Payment checkout tracking"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial ledger transactions records"
+    },
+    "/courseLessons/{lessonId}": {
+      "schema": "CourseLesson",
+      "description": "Information on a single academic course lesson"
+    },
+    "/lessonVideos/{videoId}": {
+      "schema": "LessonVideo",
+      "description": "Lesson high-fidelity video player links"
+    },
+    "/lessonResources/{resourceId}": {
+      "schema": "LessonResource",
+      "description": "Academic resources and code practice files for download"
+    },
+    "/lessonNotes/{noteId}": {
+      "schema": "LessonNote",
+      "description": "User custom notes linked to video timeline positions"
+    },
+    "/lessonBookmarks/{bookmarkId}": {
+      "schema": "LessonBookmark",
+      "description": "Interactive timestamp bookmarks"
+    },
+    "/watchHistory/{historyId}": {
+      "schema": "WatchHistory",
+      "description": "User video stream watch history tracking logs"
+    },
+    "/courseResources/{resourceId}": {
+      "schema": "StudyResource",
+      "description": "Academic course-level premium study resources"
+    },
+    "/downloads/{downloadId}": {
+      "schema": "ResourceDownload",
+      "description": "Downloader queue metadata"
+    },
+    "/offlineResources/{resourceId}": {
+      "schema": "OfflineResource",
+      "description": "Local cached offline resources"
+    },
+    "/readingProgress/{progressId}": {
+      "schema": "ReadingProgress",
+      "description": "PDF active reading layout memory markers"
+    },
+    "/quizzes/{quizId}": {
+      "schema": "Quiz",
+      "description": "Curriculum quiz assessments"
+    },
+    "/questions/{questionId}": {
+      "schema": "QuizQuestion",
+      "description": "Individual evaluation questions"
+    },
+    "/quizAttempts/{attemptId}": {
+      "schema": "QuizAttempt",
+      "description": "In-progress student attempt logs"
+    },
+    "/quizResults/{resultId}": {
+      "schema": "QuizResult",
+      "description": "Graded final result records"
+    },
+    "/leaderboards/{entryId}": {
+      "schema": "LeaderboardEntry",
+      "description": "Consolidated high scores leaderboards"
+    },
+    "/achievements/{achievementId}": {
+      "schema": "AchievementBadge",
+      "description": "Student dynamic unlocked milestones badges"
+    },
+    "/certificates/{certificateId}": {
+      "schema": "Certificate",
+      "description": "Issued course certificates"
+    },
+    "/certificateTemplates/{templateId}": {
+      "schema": "CertificateTemplate",
+      "description": "Styling configurations for certificates"
+    },
+    "/certificateVerification/{verificationId}": {
+      "schema": "CertificateVerification",
+      "description": "Public certificate verification registry"
+    },
+    "/courseCompletion/{completionId}": {
+      "schema": "CourseCompletion",
+      "description": "User course completion records"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User specific notifications list"
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Global notification announcement bulletins"
+    },
+    "/notificationSettings/{userId}": {
+      "schema": "NotificationSetting",
+      "description": "User custom notification preferences"
+    },
+    "/notificationHistory/{historyId}": {
+      "schema": "NotificationHistory",
+      "description": "Delivery tracking for push and in-app events"
+    },
+    "/liveClasses/{classId}": {
+      "schema": "LiveClass",
+      "description": "Active and scheduled live class sessions"
+    },
+    "/liveAttendance/{attendanceId}": {
+      "schema": "LiveAttendance",
+      "description": "Class session attendance sheets"
+    },
+    "/liveChat/{chatId}": {
+      "schema": "LiveChatMessage",
+      "description": "Live workspace active messages stream"
+    },
+    "/liveReminders/{reminderId}": {
+      "schema": "LiveReminder",
+      "description": "Student push notification preferences for live streams"
+    },
+    "/communityPosts/{postId}": {
+      "schema": "CommunityPost",
+      "description": "User shared posts and discussions in student forums"
+    },
+    "/communityReplies/{replyId}": {
+      "schema": "CommunityReply",
+      "description": "User replies/comments on community posts"
+    },
+    "/communityLikes/{likeId}": {
+      "schema": "CommunityLike",
+      "description": "User reactions/likes to posts or replies"
+    },
+    "/communityBookmarks/{bookmarkId}": {
+      "schema": "CommunityBookmark",
+      "description": "User bookmarks of post discussions"
+    },
+    "/communityReports/{reportId}": {
+      "schema": "CommunityReport",
+      "description": "User reported posts/replies moderation entries"
+    },
+    "/userReputation/{userId}": {
+      "schema": "UserReputation",
+      "description": "Community contribution metrics and user badges"
+    },
+    "/userXP/{userId}": {
+      "schema": "UserXP",
+      "description": "User XP and levels"
+    },
+    "/dailyStreak/{userId}": {
+      "schema": "DailyStreak",
+      "description": "User daily streaks"
+    },
+    "/badges/{badgeId}": {
+      "schema": "Badge",
+      "description": "Available system badges"
+    },
+    "/dailyGoals/{goalId}": {
+      "schema": "DailyGoal",
+      "description": "User daily goals"
+    },
+    "/rewardHistory/{historyId}": {
+      "schema": "RewardHistory",
+      "description": "XP and reward history"
+    },
+    "/chatHistory/{sessionId}": {
+      "schema": "ChatSession",
+      "description": "AI Study Assistant chat sessions"
+    },
+    "/chatHistory/{sessionId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Messages inside an AI Chat Session"
+    }
+  }
+}
