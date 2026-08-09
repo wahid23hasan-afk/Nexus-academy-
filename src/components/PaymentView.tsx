@@ -64,8 +64,9 @@ export function PaymentView({
   const [expiryDate, setExpiryDate] = useState('');
   const [cvc, setCvc] = useState('');
   
-  // View phases: 'form' | 'loading' | 'pending_approval'
-  const [phase, setPhase] = useState<'form' | 'loading' | 'pending_approval'>('form');
+  // View phases: 'form' | 'trx_input' | 'loading' | 'pending_approval'
+  const [phase, setPhase] = useState<'form' | 'trx_input' | 'loading' | 'pending_approval'>('form');
+  const [userTrxId, setUserTrxId] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [copiedAccount, setCopiedAccount] = useState(false);
 
@@ -177,9 +178,25 @@ export function PaymentView({
     return true;
   };
 
-  // Submit Payment for Admin Approval
-  const handlePayNow = async () => {
+  // Step 1: User clicks "Pay Now & Submit for Admin Approval"
+  const handleProceedToTrxInput = () => {
     if (!validateInputs()) return;
+
+    if (totalPayable === 0 || selectedMethod?.type === 'Coupon' || selectedMethod?.id === 'coupon_free') {
+      handleFinalSubmit('COUPON-FREE-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+    } else {
+      setPhase('trx_input');
+    }
+  };
+
+  // Step 2: Final submission with Transaction ID (TrxID)
+  const handleFinalSubmit = async (customTrxId?: string) => {
+    const finalTrxId = (customTrxId || userTrxId).trim().toUpperCase();
+
+    if (!finalTrxId && (totalPayable > 0 && selectedMethod?.type !== 'Coupon')) {
+      onShowNotification('Please enter your payment Transaction ID (TrxID) to proceed.', 'error');
+      return;
+    }
 
     setPhase('loading');
 
@@ -199,19 +216,20 @@ export function PaymentView({
           amount: totalPayable,
           discount: discount,
           coupon: couponCode,
+          transactionId: finalTrxId,
           status: 'pending' // Admin Approval Required!
         });
 
         setTransactionId(result.transactionId);
         setPhase('pending_approval');
-        onShowNotification('Payment submitted! Awaiting Admin Approval.', 'success');
+        onShowNotification('Payment & TrxID submitted! Awaiting Admin Approval.', 'success');
       } catch (err) {
         console.error('Error submitting payment:', err);
-        setTransactionId('TXN-' + Math.random().toString(36).substring(2, 9).toUpperCase());
+        setTransactionId(finalTrxId || ('TXN-' + Math.random().toString(36).substring(2, 9).toUpperCase()));
         setPhase('pending_approval');
         onShowNotification('Payment submitted! Awaiting Admin Approval.', 'success');
       }
-    }, 1500);
+    }, 1200);
   };
 
   // Copy Admin Payment Number
@@ -223,6 +241,124 @@ export function PaymentView({
       setTimeout(() => setCopiedAccount(false), 2000);
     }
   };
+
+  // ================= RENDER PHASE: TRANSACTION ID INPUT (STEP 2) =================
+  if (phase === 'trx_input') {
+    return (
+      <div className="flex-1 flex flex-col justify-between py-1 px-1 text-slate-100 max-w-lg mx-auto w-full">
+        {/* Header */}
+        <header className="flex items-center space-x-3 py-3.5 px-1 border-b border-white/5 backdrop-blur-md sticky top-0 z-40 bg-[#0a0f1d]/90">
+          <button 
+            onClick={() => setPhase('form')}
+            className="p-2 rounded-xl bg-white/[0.02] border border-white/10 hover:bg-white/[0.06] text-slate-300 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div>
+            <p className="text-[9px] font-mono text-[#39FF14] uppercase tracking-wider">STEP 2 OF 2 • PAYMENT VERIFICATION</p>
+            <h1 className="text-sm font-sans font-bold text-white tracking-tight">Enter Payment Transaction ID</h1>
+          </div>
+        </header>
+
+        <main className="flex-1 py-4 space-y-4 overflow-y-auto px-1">
+          {/* Payment Summary Box */}
+          <div className="bg-slate-950 border border-[#39FF14]/30 rounded-2xl p-4 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+              <div>
+                <span className="text-[9px] font-mono text-slate-400 block uppercase">Selected Gateway</span>
+                <span className="text-sm font-bold text-white flex items-center space-x-1.5">
+                  <span>{selectedMethod?.icon || '💳'}</span>
+                  <span>{selectedMethod?.name}</span>
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[9px] font-mono text-slate-400 block uppercase">Total Payable</span>
+                <span className="text-base font-mono font-extrabold text-[#39FF14]">৳{totalPayable.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Admin Account Number display */}
+            <div className="p-3 bg-white/[0.03] border border-white/10 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="text-[9px] font-mono text-slate-400 block uppercase">
+                  Admin {selectedMethod?.name} Number:
+                </span>
+                <span className="text-sm font-mono font-extrabold text-white tracking-wider">
+                  {selectedMethod?.accountNumber}
+                </span>
+              </div>
+              <button
+                onClick={handleCopyAccount}
+                className="px-2.5 py-1.5 bg-[#39FF14]/10 hover:bg-[#39FF14]/20 border border-[#39FF14]/30 rounded-lg text-xs font-mono text-[#39FF14] flex items-center space-x-1 cursor-pointer transition-colors"
+              >
+                {copiedAccount ? <Check size={12} /> : <Copy size={12} />}
+                <span>{copiedAccount ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+
+            {/* User phone/account number */}
+            <div className="flex justify-between text-xs font-mono text-slate-300 pt-1">
+              <span className="text-slate-400">Your Sender Mobile/Card:</span>
+              <span className="text-white font-bold">{walletNumber || 'Card Payment'}</span>
+            </div>
+          </div>
+
+          {/* Payment Instructions */}
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3.5 space-y-1.5">
+            <div className="flex items-center space-x-1.5 text-amber-300 font-bold text-xs">
+              <Info size={14} />
+              <span>নির্দেশনা (Instructions):</span>
+            </div>
+            <p className="text-[11px] text-amber-200/90 font-sans leading-relaxed">
+              ১. আপনার {selectedMethod?.name} অ্যাপ অথবা USSD ডায়াল করে <span className="font-bold text-amber-300">৳{totalPayable.toLocaleString()}</span> টাকা <span className="font-bold text-white">{selectedMethod?.accountNumber}</span> নম্বরে সেন্ড মানি/পেমেন্ট করুন।
+              <br />
+              ২. পেমেন্ট সফল হলে এসএমএস (SMS) এ আসা <span className="font-bold text-[#39FF14]">Transaction ID (TrxID)</span> টি নিচে টাইপ করুন এবং কনফার্ম বাটনে ক্লিক করুন।
+            </p>
+          </div>
+
+          {/* Transaction ID Input Form */}
+          <div className="bg-slate-950 border border-white/10 rounded-2xl p-4 space-y-2.5 shadow-md">
+            <label className="text-[10px] font-mono font-bold text-[#39FF14] uppercase tracking-wider block">
+              🔑 PAYMENT TRANSACTION ID (TrxID) / ট্রানজেকশন আইডি:
+            </label>
+            
+            <div className="relative">
+              <input
+                type="text"
+                value={userTrxId}
+                onChange={(e) => setUserTrxId(e.target.value.toUpperCase().trim())}
+                placeholder="e.g. 8X9A21B or TRX9823472"
+                className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-[#39FF14]/40 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:border-[#39FF14] focus:bg-white/[0.06] transition-all font-bold tracking-widest text-center uppercase"
+                autoFocus
+              />
+            </div>
+
+            <p className="text-[9.5px] text-slate-400 font-sans text-center">
+              * সঠিক ট্রানজেকশন আইডি দিলে এডমিন দ্রুত আপনার পেমেন্ট ভেরিফাই করতে পারবেন।
+            </p>
+          </div>
+        </main>
+
+        {/* Footer actions */}
+        <footer className="mt-4 pt-3 border-t border-white/5 space-y-2 px-1 bg-[#0a0f1d]">
+          <button
+            onClick={() => handleFinalSubmit()}
+            className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-[#39FF14]/20 cursor-pointer"
+          >
+            <ShieldCheck size={16} />
+            <span>CONFIRM PAYMENT & SUBMIT ORDER</span>
+          </button>
+
+          <button
+            onClick={() => setPhase('form')}
+            className="w-full py-2.5 bg-transparent hover:bg-white/5 text-slate-400 hover:text-white font-mono text-xs rounded-xl transition-all cursor-pointer"
+          >
+            ← Back to Payment Methods
+          </button>
+        </footer>
+      </div>
+    );
+  }
 
   // ================= RENDER PHASE: LOADING =================
   if (phase === 'loading') {
@@ -603,7 +739,7 @@ export function PaymentView({
       {/* ================= FOOTER ACTIONS ================= */}
       <footer className="mt-4 pt-3 border-t border-white/5 space-y-2.5 px-1 bg-[#0a0f1d]">
         <button
-          onClick={handlePayNow}
+          onClick={handleProceedToTrxInput}
           className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-[#39FF14]/10 cursor-pointer"
         >
           <ShieldCheck size={14} />

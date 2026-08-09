@@ -259,9 +259,10 @@ export const gamificationService = {
   // Get User Achievements
   async getUserAchievements(userId: string): Promise<AchievementBadge[]> {
     try {
-      const q = query(collection(db, 'achievements'), where('userId', '==', userId), orderBy('unlockedAt', 'desc'));
+      const q = query(collection(db, 'achievements'), where('userId', '==', userId));
       const snap = await getDocs(q);
-      return snap.docs.map(d => ({ achievementId: d.id, ...d.data() } as AchievementBadge));
+      const list = snap.docs.map(d => ({ achievementId: d.id, ...d.data() } as AchievementBadge));
+      return list.sort((a, b) => new Date(b.unlockedAt || 0).getTime() - new Date(a.unlockedAt || 0).getTime());
     } catch (error) {
       console.error("Failed to get achievements:", error);
       return [];
@@ -271,9 +272,12 @@ export const gamificationService = {
   // Get Reward History
   async getRewardHistory(userId: string): Promise<RewardHistory[]> {
     try {
-      const q = query(collection(db, 'rewardHistory'), where('userId', '==', userId), orderBy('createdAt', 'desc'), limit(50));
+      const q = query(collection(db, 'rewardHistory'), where('userId', '==', userId));
       const snap = await getDocs(q);
-      return snap.docs.map(d => ({ historyId: d.id, ...d.data() } as RewardHistory));
+      const list = snap.docs.map(d => ({ historyId: d.id, ...d.data() } as RewardHistory));
+      return list
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+        .slice(0, 50);
     } catch (error) {
       console.error("Failed to get reward history:", error);
       return [];

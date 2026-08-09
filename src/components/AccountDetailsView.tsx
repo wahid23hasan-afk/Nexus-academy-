@@ -1,6 +1,9 @@
-import React from 'react';
-import { ChevronLeft, User, Mail, Hash, Calendar, Shield, MapPin } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, User, Mail, Hash, Calendar, Shield, MapPin, CheckCircle2, Clock, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
+import { auth } from '../services/firebase';
+import { courseService } from '../services/courseService';
+import { progressService } from '../services/progressService';
 
 interface AccountDetailsViewProps {
   onBack: () => void;
@@ -8,6 +11,47 @@ interface AccountDetailsViewProps {
 }
 
 export const AccountDetailsView: React.FC<AccountDetailsViewProps> = ({ onBack, userProfile }) => {
+  const [approvalStatus, setApprovalStatus] = useState<'Approved' | 'Pending' | 'Rejected'>('Approved');
+
+  useEffect(() => {
+    const checkApprovalStatus = async () => {
+      const userId = auth.currentUser?.uid || userProfile?.username || 'guest_user';
+      const userEmail = auth.currentUser?.email || userProfile?.email || userProfile?.username || '';
+
+      try {
+        const purchases = await courseService.getUserPurchases(userId, userEmail);
+        const myCourses = await progressService.getUserMyCourses(userId, userEmail);
+
+        const hasApproved = purchases.some(p => p.status === 'approved' || p.status === 'success' || p.status === 'active') || myCourses.length > 0;
+        const hasPending = purchases.some(p => p.status === 'pending');
+        const hasRejected = purchases.some(p => p.status === 'rejected' || p.status === 'failed');
+
+        if (hasRejected && !hasApproved) {
+          setApprovalStatus('Rejected');
+        } else if (hasPending && !hasApproved) {
+          setApprovalStatus('Pending');
+        } else if (hasRejected) {
+          setApprovalStatus('Rejected');
+        } else {
+          setApprovalStatus('Approved');
+        }
+      } catch (e) {
+        console.warn('Failed to compute student approval status:', e);
+      }
+    };
+
+    checkApprovalStatus();
+
+    const handleUpdate = () => {
+      checkApprovalStatus();
+    };
+
+    window.addEventListener('nexus_purchases_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('nexus_purchases_updated', handleUpdate);
+    };
+  }, [userProfile]);
+
   return (
     <div className="flex-1 flex flex-col pt-2 pb-24 space-y-6">
       {/* Header */}
@@ -31,7 +75,7 @@ export const AccountDetailsView: React.FC<AccountDetailsViewProps> = ({ onBack, 
         <div className="absolute top-0 right-0 w-32 h-32 bg-[#39FF14]/5 rounded-full blur-3xl" />
         
         <div className="flex flex-col items-center mb-8 relative z-10">
-          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-[#39FF14]/30 flex items-center justify-center overflow-hidden mb-4 shadow-[0_0_15px_rgba(57,255,20,0.1)]">
+          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-[#39FF14]/30 flex items-center justify-center overflow-hidden mb-3 shadow-[0_0_15px_rgba(57,255,20,0.1)]">
             {userProfile?.photoURL ? (
               <img src={userProfile.photoURL || undefined} alt="Avatar" className="w-full h-full object-cover" />
             ) : (
@@ -39,10 +83,57 @@ export const AccountDetailsView: React.FC<AccountDetailsViewProps> = ({ onBack, 
             )}
           </div>
           <h3 className="text-xl font-bold text-white">{userProfile?.fullName || 'Nexus Scholar'}</h3>
-          <p className="text-sm font-mono text-slate-400">@{userProfile?.username || 'scholar'}</p>
+          <p className="text-sm font-mono text-slate-400 mt-0.5">@{userProfile?.username || 'scholar'}</p>
+          
+          {/* Approval Badge under Header */}
+          <div className="mt-3">
+            <span className={`px-3 py-1 rounded-full text-xs font-mono font-bold flex items-center space-x-1.5 border ${
+              approvalStatus === 'Approved'
+                ? 'bg-[#39FF14]/15 text-[#39FF14] border-[#39FF14]/40 shadow-[0_0_10px_rgba(57,255,20,0.2)]'
+                : approvalStatus === 'Pending'
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.2)] animate-pulse'
+                : 'bg-red-500/20 text-red-300 border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]'
+            }`}>
+              {approvalStatus === 'Approved' ? (
+                <ShieldCheck size={13} className="text-[#39FF14]" />
+              ) : approvalStatus === 'Pending' ? (
+                <Clock size={13} className="text-amber-400" />
+              ) : (
+                <Clock size={13} className="text-red-400" />
+              )}
+              <span>Approval Status: {approvalStatus}</span>
+            </span>
+          </div>
         </div>
 
         <div className="space-y-4 relative z-10">
+          {/* Approval Status Card */}
+          <div className="bg-slate-900/50 rounded-xl p-4 flex items-center justify-between border border-white/5">
+            <div className="flex items-center space-x-3">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                approvalStatus === 'Approved' ? 'bg-[#39FF14]/10 text-[#39FF14]' : approvalStatus === 'Pending' ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'
+              }`}>
+                {approvalStatus === 'Approved' ? <ShieldCheck size={16} /> : <Clock size={16} />}
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs text-slate-500">Approval Status</span>
+                <span className="text-sm font-medium text-slate-200">
+                  {approvalStatus === 'Approved' ? 'Approved Student' : approvalStatus === 'Pending' ? 'Pending Verification' : 'Payment Rejected'}
+                </span>
+              </div>
+            </div>
+            <span className={`px-2.5 py-1 rounded-full text-xs font-mono font-bold flex items-center space-x-1 border ${
+              approvalStatus === 'Approved'
+                ? 'bg-[#39FF14]/10 text-[#39FF14] border-[#39FF14]/30'
+                : approvalStatus === 'Pending'
+                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                : 'bg-red-500/10 text-red-400 border-red-500/30'
+            }`}>
+              {approvalStatus === 'Approved' ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+              <span>{approvalStatus}</span>
+            </span>
+          </div>
+
           <div className="bg-slate-900/50 rounded-xl p-4 flex items-center justify-between border border-white/5">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400">

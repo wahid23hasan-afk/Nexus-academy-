@@ -210,43 +210,43 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
       <div>
         <button 
           onClick={handleLogout}
-          className="flex items-center space-x-1 text-slate-400 hover:text-white transition-colors py-2 group cursor-pointer"
+          className="inline-flex items-center space-x-1.5 text-slate-300 hover:text-white transition-colors py-2.5 px-3 -ml-3 rounded-xl hover:bg-white/5 active:bg-white/10 min-h-[44px] group cursor-pointer"
         >
-          <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition-transform" />
+          <ArrowLeft size={18} className="group-hover:-translate-x-0.5 transition-transform text-[#39FF14]" />
           <span className="text-xs font-mono font-medium">Cancel & Sign Out</span>
         </button>
 
-        <div className="mt-4">
-          <h2 className="text-2xl font-display font-semibold text-white tracking-tight flex items-center space-x-2">
-            <Mail className="text-[#39FF14] animate-pulse" size={24} />
+        <div className="mt-3">
+          <h2 className="text-2xl sm:text-3xl font-display font-semibold text-white tracking-tight flex items-center space-x-2">
+            <Mail className="text-[#39FF14] animate-pulse" size={26} />
             <span>Shield Verification</span>
           </h2>
           {/* Specific request message */}
-          <p className="text-xs text-[#39FF14] mt-2 font-medium bg-[#39FF14]/5 border border-[#39FF14]/10 px-3 py-2 rounded-xl">
+          <p className="text-xs text-[#39FF14] mt-2 font-medium bg-[#39FF14]/5 border border-[#39FF14]/15 px-3.5 py-2.5 rounded-xl leading-relaxed">
             "Your email address has not been verified yet. Please verify your email before logging in."
           </p>
         </div>
       </div>
 
       {/* Main verification area */}
-      <div className="flex-1 my-6 flex flex-col justify-center space-y-6">
+      <div className="flex-1 my-5 flex flex-col justify-center space-y-5">
         
         {/* Verification target label */}
         <div className="text-center">
-          <span className="text-xs text-slate-450 font-sans block">Official link dispatched to:</span>
-          <span className="text-sm text-slate-200 font-mono font-semibold mt-0.5 bg-white/[0.02] border border-white/5 px-3 py-1 rounded-full inline-flex items-center space-x-1">
-            <span>{email}</span>
+          <span className="text-xs text-slate-400 font-sans block">Official link dispatched to:</span>
+          <div className="mt-1.5 inline-flex items-center space-x-2 bg-white/[0.03] border border-white/10 px-3.5 py-1.5 rounded-full">
+            <span className="text-xs sm:text-sm text-slate-100 font-mono font-semibold">{email}</span>
             <button
               onClick={() => {
                 setNewEmail(email);
                 setIsChangingEmail(!isChangingEmail);
               }}
-              className="p-1 hover:text-[#39FF14] transition-colors cursor-pointer"
+              className="p-1.5 hover:text-[#39FF14] text-slate-400 hover:bg-white/10 rounded-lg transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
               title="Change email address"
             >
-              <Edit2 size={12} />
+              <Edit2 size={14} />
             </button>
-          </span>
+          </div>
         </div>
 
         {/* Change Email Form Block (Interactive Modal) */}
@@ -256,10 +256,10 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="bg-white/[0.02] border border-white/10 rounded-2xl p-4 space-y-3"
+              className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 space-y-3"
             >
-              <form onSubmit={handleChangeEmailSubmit} className="space-y-2">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block">
+              <form onSubmit={handleChangeEmailSubmit} className="space-y-2.5">
+                <label className="text-[11px] font-mono uppercase tracking-wider text-slate-300 block">
                   Enter New Email Address
                 </label>
                 <div className="flex space-x-2">
@@ -269,13 +269,13 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
                     value={newEmail}
                     onChange={(e) => setNewEmail(e.target.value)}
                     placeholder="new.email@example.com"
-                    className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-[#39FF14]"
+                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3.5 py-3 min-h-[44px] text-base sm:text-xs text-slate-100 focus:outline-none focus:border-[#39FF14]"
                   />
                   <button
                     type="submit"
-                    className="bg-[#39FF14] text-black hover:bg-[#32e011] transition-colors rounded-xl px-3 text-xs font-semibold flex items-center space-x-1 cursor-pointer"
+                    className="bg-[#39FF14] text-black hover:bg-[#32e011] active:scale-[0.98] transition-all rounded-xl px-4 py-3 min-h-[44px] text-xs font-semibold flex items-center space-x-1.5 cursor-pointer"
                   >
-                    <Send size={11} />
+                    <Send size={14} />
                     <span>Update</span>
                   </button>
                 </div>
@@ -285,7 +285,7 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsChangingEmail(false)}
-                  className="text-[10px] text-slate-400 hover:underline block"
+                  className="text-xs text-slate-400 hover:underline inline-flex py-1.5 px-2"
                 >
                   Cancel Change
                 </button>
@@ -295,31 +295,31 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
         </AnimatePresence>
 
         {/* Informative Live Tracker */}
-        <div className="space-y-4 bg-white/[0.01] border border-white/5 rounded-2xl p-4 text-center">
+        <div className="space-y-2.5 bg-white/[0.02] border border-white/10 rounded-2xl p-4 text-center">
           <div className="flex items-center justify-center space-x-2 text-xs text-[#39FF14] font-mono animate-pulse">
             <span className="w-2 h-2 rounded-full bg-[#39FF14] inline-block" />
             <span>ACTIVELY POLLING FIREBASE AUTH MATRIX...</span>
           </div>
-          <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+          <p className="text-xs text-slate-300 leading-relaxed font-sans">
             Please click the official verification link inside your email inbox to verify. The system will auto-detect the click and grant entrance instantly.
           </p>
         </div>
 
         {/* Action Options Row (Open Email App & Status Refresh) */}
-        <div className="grid grid-cols-2 gap-3 pt-2">
+        <div className="grid grid-cols-2 gap-3 pt-1">
           <button
             onClick={handleOpenEmailApp}
-            className="flex items-center justify-center space-x-1.5 px-3 py-2.5 bg-white/[0.02] border border-white/5 hover:border-white/10 rounded-xl text-xs text-slate-300 hover:text-white transition-all cursor-pointer"
+            className="flex items-center justify-center space-x-2 px-3 py-3.5 min-h-[48px] bg-white/[0.03] border border-white/10 hover:border-white/20 active:bg-white/10 rounded-xl text-xs sm:text-sm text-slate-200 hover:text-white transition-all cursor-pointer font-medium"
           >
-            <ExternalLink size={13} />
+            <ExternalLink size={15} />
             <span>Open Email App</span>
           </button>
           
           <button
             onClick={handleRefreshStatus}
-            className="flex items-center justify-center space-x-1.5 px-3 py-2.5 bg-white/[0.02] border border-white/5 hover:border-white/10 rounded-xl text-xs text-slate-300 hover:text-white transition-all cursor-pointer font-semibold"
+            className="flex items-center justify-center space-x-2 px-3 py-3.5 min-h-[48px] bg-white/[0.03] border border-white/10 hover:border-white/20 active:bg-white/10 rounded-xl text-xs sm:text-sm text-slate-200 hover:text-white transition-all cursor-pointer font-semibold"
           >
-            <RefreshCw size={13} className={isVerifying ? 'animate-spin' : ''} />
+            <RefreshCw size={15} className={isVerifying ? 'animate-spin' : ''} />
             <span>Refresh Status</span>
           </button>
         </div>
@@ -328,12 +328,12 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
 
       {/* Footer countdown and resend control */}
       <div className="border-t border-white/5 pt-4 text-center space-y-2">
-        <p className="text-xs text-slate-450">
+        <p className="text-xs text-slate-400">
           Didn't receive the verification link?
         </p>
         
         {isResendDisabled ? (
-          <div className="inline-flex items-center space-x-2 text-xs font-mono text-slate-450 bg-white/[0.01] border border-white/5 px-3 py-1.5 rounded-full">
+          <div className="inline-flex items-center space-x-2 text-xs font-mono text-slate-400 bg-white/[0.02] border border-white/10 px-4 py-2 min-h-[40px] rounded-full">
             <span>Resend secure link in</span>
             <span className="text-[#39FF14] font-bold">{timer}s</span>
           </div>
@@ -342,9 +342,9 @@ export const VerificationView: React.FC<VerificationViewProps> = ({
             onClick={handleResend}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="text-xs font-semibold text-[#39FF14] hover:underline flex items-center justify-center space-x-1 mx-auto cursor-pointer"
+            className="text-xs font-semibold text-[#39FF14] hover:underline inline-flex items-center justify-center space-x-1.5 py-2.5 px-4 min-h-[44px] rounded-xl hover:bg-[#39FF14]/10 cursor-pointer"
           >
-            <Send size={12} />
+            <Send size={14} />
             <span>Resend Verification Link</span>
           </motion.button>
         )}

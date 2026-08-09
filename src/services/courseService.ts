@@ -845,8 +845,26 @@ export const courseService = {
       if (!coursesSnap.empty) {
         courses = coursesSnap.docs.map(docSnap => {
           const data = docSnap.data();
+          const learningOutcomes = Array.isArray(data.learningOutcomes)
+            ? data.learningOutcomes
+            : typeof data.learningOutcomes === 'string'
+              ? data.learningOutcomes.split('\n').flatMap(s => s.split(',')).map(s => s.trim()).filter(Boolean)
+              : [];
+          const skillsGained = Array.isArray(data.skillsGained)
+            ? data.skillsGained
+            : typeof data.skillsGained === 'string'
+              ? data.skillsGained.split(',').map(s => s.trim()).filter(Boolean)
+              : [];
+          const requirements = Array.isArray(data.requirements)
+            ? data.requirements
+            : typeof data.requirements === 'string'
+              ? data.requirements.split(',').map(s => s.trim()).filter(Boolean)
+              : [];
           return {
             ...data,
+            learningOutcomes,
+            skillsGained,
+            requirements,
             courseId: docSnap.id,
             createdAt: data.createdAt,
             updatedAt: data.updatedAt
@@ -973,6 +991,52 @@ export const courseService = {
     } catch (err) {
       console.warn(`Failed to fetch reviews for ${courseId}, returning mock fallback:`, err);
       return generateMockReviewsForCourse(courseId);
+    }
+  },
+
+  // Submit/Add a Course Review and update average rating in the course doc
+  async addReview(review: Omit<CourseReview, 'reviewId' | 'createdAt'>): Promise<CourseReview> {
+    const reviewId = 'rev_' + Date.now() + Math.random().toString(36).substring(2, 6);
+    const newReview: CourseReview = {
+      ...review,
+      reviewId,
+      createdAt: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+    };
+
+    try {
+      // 1. Write the new review doc to Firestore
+      await setDoc(doc(db, 'courseReviews', reviewId), newReview);
+
+      // 2. Fetch all reviews for this course to calculate the correct rating
+      const reviewsQuery = query(collection(db, 'courseReviews'), where('courseId', '==', review.courseId));
+      const snap = await getDocs(reviewsQuery);
+      let totalRating = 0;
+      let reviewCount = 0;
+      
+      snap.forEach(d => {
+        const data = d.data() as CourseReview;
+        totalRating += Number(data.rating || 0);
+        reviewCount++;
+      });
+
+      const averageRating = reviewCount > 0 ? Number((totalRating / reviewCount).toFixed(1)) : Number(review.rating.toFixed(1));
+
+      // 3. Update the course document with the new averageRating and reviewCount
+      const courseDocRef = doc(db, 'courses', review.courseId);
+      const courseDocSnap = await getDoc(courseDocRef);
+      if (courseDocSnap.exists()) {
+        await updateDoc(courseDocRef, {
+          rating: averageRating,
+          averageRating: averageRating,
+          reviewCount: reviewCount
+        });
+      }
+
+      return newReview;
+    } catch (err) {
+      console.error('Error adding course review:', err);
+      handleFirestoreError(err, OperationType.WRITE, 'courseReviews');
+      return newReview;
     }
   },
 
@@ -1271,10 +1335,11 @@ export const courseService = {
     amount: number;
     discount: number;
     coupon: string;
+    transactionId?: string;
     status?: 'pending' | 'approved' | 'success' | 'rejected' | 'failed';
   }): Promise<{ purchaseId: string; transactionId: string }> {
     const purchaseId = 'pur-' + Math.random().toString(36).substring(2, 11).toUpperCase();
-    const transactionId = 'TXN-' + Math.random().toString(36).substring(2, 11).toUpperCase();
+    const transactionId = data.transactionId?.trim() || ('TXN-' + Math.random().toString(36).substring(2, 11).toUpperCase());
     const paymentId = 'pay-' + Math.random().toString(36).substring(2, 11).toUpperCase();
     const nowISO = new Date().toISOString();
     const status = data.status || 'pending';
@@ -1328,6 +1393,10 @@ export const courseService = {
     fallbackPurchases.push(purchaseObj);
     localStorage.setItem('nexus_db_purchases', JSON.stringify(fallbackPurchases));
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_purchases_updated'));
+    }
+
     return { purchaseId, transactionId };
   },
 
@@ -1358,12 +1427,23 @@ export const courseService = {
       (cleanEmail && p.userEmail?.toLowerCase() === cleanEmail)
     );
 
-    // Merge unique by purchaseId
+    // Merge unique by purchaseId - FIRESTORE DATA TAKES PRECEDENCE
     const map = new Map<string, Purchase>();
-    firestorePurchases.forEach(p => map.set(p.purchaseId, p));
     userFallback.forEach(p => map.set(p.purchaseId, p));
+    firestorePurchases.forEach(p => map.set(p.purchaseId, p));
 
-    return Array.from(map.values());
+    const merged = Array.from(map.values());
+
+    // Sync updated statuses back into local storage
+    if (merged.length > 0) {
+      const allLocalPurchases: Purchase[] = JSON.parse(localStorage.getItem('nexus_db_purchases') || '[]');
+      const localMap = new Map<string, Purchase>();
+      allLocalPurchases.forEach(p => localMap.set(p.purchaseId, p));
+      merged.forEach(p => localMap.set(p.purchaseId, p));
+      localStorage.setItem('nexus_db_purchases', JSON.stringify(Array.from(localMap.values())));
+    }
+
+    return merged;
   },
 
   // Admin Grant Instant Access (Manual or Batch Enrollment)
@@ -1489,6 +1569,10 @@ export const courseService = {
     localStorage.setItem('nexus_db_purchases', JSON.stringify(fallbackPurchases));
     localStorage.setItem('nexus_my_courses', JSON.stringify(fallbackMyCourses));
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_purchases_updated'));
+    }
+
     return { grantedCount, details };
   },
 
@@ -1506,10 +1590,13 @@ export const courseService = {
     const fallbackPurchases: Purchase[] = JSON.parse(localStorage.getItem('nexus_db_purchases') || '[]');
     
     const map = new Map<string, Purchase>();
-    firestorePurchases.forEach(p => map.set(p.purchaseId, p));
     fallbackPurchases.forEach(p => map.set(p.purchaseId, p));
+    firestorePurchases.forEach(p => map.set(p.purchaseId, p));
 
-    return Array.from(map.values()).sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+    const merged = Array.from(map.values()).sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+    localStorage.setItem('nexus_db_purchases', JSON.stringify(merged));
+
+    return merged;
   },
 
   // Admin Approve Purchase
@@ -1519,7 +1606,7 @@ export const courseService = {
       const pRef = doc(db, 'purchases', purchaseId);
       const snap = await getDoc(pRef);
       if (snap.exists()) {
-        targetPurchase = snap.data() as Purchase;
+        targetPurchase = { ...(snap.data() as Purchase), status: 'approved' };
         await updateDoc(pRef, { status: 'approved' });
       }
     } catch (err) {
@@ -1527,13 +1614,20 @@ export const courseService = {
     }
 
     const fallbackPurchases: Purchase[] = JSON.parse(localStorage.getItem('nexus_db_purchases') || '[]');
+    let foundInFallback = false;
     const updated = fallbackPurchases.map(p => {
       if (p.purchaseId === purchaseId) {
+        foundInFallback = true;
         p.status = 'approved';
-        targetPurchase = p;
+        if (!targetPurchase) targetPurchase = p;
       }
       return p;
     });
+
+    if (!foundInFallback && targetPurchase) {
+      updated.push(targetPurchase);
+    }
+
     localStorage.setItem('nexus_db_purchases', JSON.stringify(updated));
 
     if (!targetPurchase) {
@@ -1593,6 +1687,10 @@ export const courseService = {
       }
     });
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_purchases_updated'));
+    }
+
     return { userId: targetPurchase.userId, courseId: targetPurchase.courseId };
   },
 
@@ -1613,5 +1711,9 @@ export const courseService = {
       return p;
     });
     localStorage.setItem('nexus_db_purchases', JSON.stringify(updated));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_purchases_updated'));
+    }
   }
 };

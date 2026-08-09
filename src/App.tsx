@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GlowBackground } from './components/GlowBackground';
 import { WelcomeView } from './components/WelcomeView';
@@ -6,9 +6,9 @@ import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
 import { VerificationView } from './components/VerificationView';
 
-const ProfileSetupView = lazy(() => import('./components/ProfileSetupView').then(m => ({ default: m.ProfileSetupView })));
-const CourseDiscoveryView = lazy(() => import('./components/CourseDiscoveryView').then(m => ({ default: m.CourseDiscoveryView })));
-const PublicCertificateVerification = lazy(() => import('./components/PublicCertificateVerification').then(m => ({ default: m.PublicCertificateVerification })));
+import { ProfileSetupView } from './components/ProfileSetupView';
+import { CourseDiscoveryView } from './components/CourseDiscoveryView';
+import { PublicCertificateVerification } from './components/PublicCertificateVerification';
 
 import { AppView } from './types/auth';
 import { auth, db } from './services/firebase';
@@ -16,7 +16,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { authService } from './services/authService';
 import { ENABLE_EMAIL_VERIFICATION } from './config';
-import { Check, X, Bell, Copy, Shield, LogOut, GraduationCap, Calendar, Mail, User as UserIcon } from 'lucide-react';
+import { Check, X, Bell, Copy, Shield, LogOut, GraduationCap, Calendar, Mail, User as UserIcon, WifiOff } from 'lucide-react';
 
 
 export default function App() {
@@ -29,6 +29,28 @@ export default function App() {
   
   // Custom toast notifications (success / error states)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Offline mode state tracking
+  const [isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      setToast({ message: 'Connected! Back online.', type: 'success' });
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      setToast({ message: 'Offline mode active. Using cached data.', type: 'error' });
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   
   // Certificate Public Verification Link Routing
@@ -126,9 +148,9 @@ export default function App() {
   }, [currentView]);
 
   
-    const triggerToast = (message: string, type: 'success' | 'error') => {
+  const triggerToast = useCallback((message: string, type: 'success' | 'error') => {
     setToast({ message, type });
-  };
+  }, []);
 
   const handleLogout = async () => {
     await authService.logout();
@@ -136,6 +158,23 @@ export default function App() {
 
   return (
     <GlowBackground>
+      {/* Persistent Offline Mode Badge */}
+      <AnimatePresence>
+        {isOffline && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-auto max-w-[90vw]"
+          >
+            <div className="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-amber-950/90 border border-amber-500/40 text-amber-300 backdrop-blur-md shadow-xl text-[11px] font-mono font-semibold tracking-wider">
+              <WifiOff size={13} className="animate-pulse text-amber-400 shrink-0" />
+              <span>OFFLINE MODE • CACHED DATA ACTIVE</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* 1. Glassmorphic App Toast Notification Alert */}
       <AnimatePresence>
         {toast && (

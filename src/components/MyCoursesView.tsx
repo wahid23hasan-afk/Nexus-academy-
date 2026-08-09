@@ -51,21 +51,25 @@ export function MyCoursesView({
     try {
       // 1. Fetch user purchase records to check approval status (by userId OR userEmail)
       const userPurchases = await courseService.getUserPurchases(userId, userEmail);
-      const pendingPur = userPurchases.filter(p => p.status === 'pending');
-      const approvedPurIds = userPurchases
-        .filter(p => p.status === 'approved' || p.status === 'success' || p.status === 'active')
-        .map(p => p.courseId);
 
       // 2. Fetch relations from myCourses Firestore (by userId OR userEmail)
       const relations = await progressService.getUserMyCourses(userId, userEmail);
       setCourseRelations(relations);
+
+      const approvedPurIds = userPurchases
+        .filter(p => p.status === 'approved' || p.status === 'success' || p.status === 'active')
+        .map(p => p.courseId);
+      const relationCourseIds = relations.map(r => r.courseId);
+      const allApprovedIds = Array.from(new Set([...approvedPurIds, ...relationCourseIds]));
+
+      const pendingPur = userPurchases.filter(p => p.status === 'pending' && !allApprovedIds.includes(p.courseId));
 
       // 3. Fetch all course templates
       const allCourses = await courseService.getCourses();
 
       // Filter matched courses ONLY if approved or already in progress
       const matchedApproved = allCourses.filter(c => 
-        approvedPurIds.includes(c.courseId) || relations.some(r => r.courseId === c.courseId)
+        allApprovedIds.includes(c.courseId)
       );
       setPurchasedCourses(matchedApproved);
 
@@ -111,7 +115,16 @@ export function MyCoursesView({
 
   useEffect(() => {
     loadClassroomData();
-  }, [userId]);
+
+    const handleUpdate = () => {
+      loadClassroomData(true);
+    };
+
+    window.addEventListener('nexus_purchases_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('nexus_purchases_updated', handleUpdate);
+    };
+  }, [userId, userEmail]);
 
   // Pull to refresh simulation
   const handlePullToRefresh = () => {

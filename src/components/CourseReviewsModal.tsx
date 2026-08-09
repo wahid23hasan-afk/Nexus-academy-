@@ -134,10 +134,10 @@ export function CourseReviewsModal({
         {/* Rating Overview */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-2xl">
           <div className="text-center sm:border-r border-white/10 pr-2 space-y-1">
-            <span className="text-3xl font-extrabold text-white font-mono">{rating.toFixed(1)}</span>
+            <span className="text-3xl font-extrabold text-white font-mono">{(typeof rating === 'number' ? rating : Number(rating) || 5.0).toFixed(1)}</span>
             <div className="flex justify-center text-amber-400">
               {[...Array(5)].map((_, i) => (
-                <Star key={i} size={14} fill={i < Math.floor(rating) ? 'currentColor' : 'none'} />
+                <Star key={i} size={14} fill={i < Math.floor(typeof rating === 'number' ? rating : Number(rating) || 5.0) ? 'currentColor' : 'none'} />
               ))}
             </div>
             <p className="text-[10px] text-slate-400 font-mono">{totalReviews} Verified Ratings</p>

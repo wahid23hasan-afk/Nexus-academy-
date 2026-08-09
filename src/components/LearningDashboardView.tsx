@@ -40,7 +40,7 @@ import { certificateService } from '../services/certificateService';
 import { Certificate } from '../types/certificate';
 import { CertificateCelebrationView } from './CertificateCelebrationView';
 import { PremiumCertificatePreview } from './PremiumCertificatePreview';
-import { Course, CurriculumChapter, CurriculumLesson } from '../types/course';
+import { Course, CurriculumChapter, CurriculumLesson, CourseReview } from '../types/course';
 import { progressService, LessonProgressInfo, CourseProgressInfo } from '../services/progressService';
 import { courseService } from '../services/courseService';
 import { auth } from '../services/firebase';
@@ -110,7 +110,17 @@ export function LearningDashboardView({
   // Note/Bookmark Creation state
   const [newNoteTitle, setNewNoteTitle] = useState('');
   const [newNoteContent, setNewNoteContent] = useState('');
-  const [activeTab, setActiveTab] = useState<'syllabus' | 'notes' | 'bookmarks' | 'resources' | 'quizzes'>('syllabus');
+  const [activeTab, setActiveTab] = useState<'syllabus' | 'notes' | 'bookmarks' | 'resources' | 'quizzes' | 'reviews'>('syllabus');
+
+  // Rating and reviews state inside classroom
+  const [localRating, setLocalRating] = useState<number>(() => typeof course.rating === 'number' ? course.rating : Number(course.rating) || 5.0);
+  const [localReviewCount, setLocalReviewCount] = useState<number>(() => course.reviewCount || 120);
+  const [reviews, setReviews] = useState<CourseReview[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState<boolean>(true);
+  const [showReviewForm, setShowReviewForm] = useState<boolean>(false);
+  const [userRating, setUserRating] = useState<number>(5);
+  const [commentText, setCommentText] = useState<string>('');
+  const [submittingReview, setSubmittingReview] = useState<boolean>(false);
 
   // Video element interaction states
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -141,19 +151,19 @@ export function LearningDashboardView({
       const userPurchases = await courseService.getUserPurchases(userId, userEmail);
       const myCourses = await progressService.getUserMyCourses(userId, userEmail);
 
-      const matchPurchase = userPurchases.find(p => p.courseId === course.courseId);
-      const matchMyCourse = myCourses.find(m => m.courseId === course.courseId);
+      const hasApproved = userPurchases.some(p => 
+        p.courseId === course.courseId && 
+        (p.status === 'approved' || p.status === 'success' || p.status === 'active')
+      ) || myCourses.some(m => m.courseId === course.courseId);
 
-      if (matchPurchase) {
-        if (matchPurchase.status === 'pending') {
-          setHasPendingApproval(true);
-          setHasApprovedPurchase(false);
-        } else if (matchPurchase.status === 'approved' || matchPurchase.status === 'success' || matchPurchase.status === 'active') {
-          setHasApprovedPurchase(true);
-          setHasPendingApproval(false);
-        }
-      } else if (matchMyCourse) {
+      if (hasApproved) {
         setHasApprovedPurchase(true);
+        setHasPendingApproval(false);
+      } else if (userPurchases.some(p => p.courseId === course.courseId && p.status === 'pending')) {
+        setHasPendingApproval(true);
+        setHasApprovedPurchase(false);
+      } else {
+        setHasApprovedPurchase(false);
         setHasPendingApproval(false);
       }
 
@@ -200,6 +210,17 @@ export function LearningDashboardView({
         nextToStudy = unfinished || allLessons[0] || null;
       }
 
+      // Fetch reviews for ratings tab
+      setLoadingReviews(true);
+      try {
+        const courseRevs = await courseService.getReviews(course.courseId);
+        setReviews(courseRevs || []);
+      } catch (err) {
+        console.warn('Failed to load reviews inside classroom:', err);
+      } finally {
+        setLoadingReviews(false);
+      }
+
       setActiveLesson(nextToStudy);
       
       // Auto-evaluate graduation certificate eligibility after loading curriculum data
@@ -216,10 +237,67 @@ export function LearningDashboardView({
   };
 
   useEffect(() => {
-    if (isEnrolled) {
-      loadLearningData();
-    }
+    loadLearningData();
+
+    const handleUpdate = () => {
+      loadLearningData(true);
+    };
+
+    window.addEventListener('nexus_purchases_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('nexus_purchases_updated', handleUpdate);
+    };
   }, [course.courseId, isEnrolled]);
+
+  // Handle Review Submission inside Classroom View
+  const handleSubmitReview = async () => {
+    if (!commentText.trim()) {
+      onShowNotification('Please write a brief comment first.', 'error');
+      return;
+    }
+
+    setSubmittingReview(true);
+    try {
+      const reviewObj = {
+        courseId: course.courseId,
+        studentName: userProfile?.fullName || 'Verified Student',
+        studentPhotoURL: userProfile?.photoURL || '',
+        rating: userRating,
+        comment: commentText.trim()
+      };
+
+      const newReview = await courseService.addReview(reviewObj);
+      
+      // Update local reviews list
+      setReviews(prev => [newReview, ...prev]);
+      
+      // Calculate updated ratings locally for instant UI update
+      const updatedCount = localReviewCount + 1;
+      const updatedRating = Number(((localRating * localReviewCount + userRating) / updatedCount).toFixed(1));
+      
+      setLocalRating(updatedRating);
+      setLocalReviewCount(updatedCount);
+
+      // Mutate actual course prop/object fields as fallback
+      course.rating = updatedRating;
+      course.reviewCount = updatedCount;
+
+      // Clean up form
+      setCommentText('');
+      setUserRating(5);
+      setShowReviewForm(false);
+      
+      // Dispatches global rating update event
+      window.dispatchEvent(new CustomEvent('nexus_course_rated', { detail: { courseId: course.courseId, rating: updatedRating, reviewCount: updatedCount } }));
+
+      onShowNotification('🌟 Thank you! Your rating and review have been published.', 'success');
+    } catch (err) {
+      console.error('Error submitting review:', err);
+      onShowNotification('Failed to submit your review. Please try again.', 'error');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
 
   // 2. Fetch specific video & interaction details when active lesson switches
   useEffect(() => {
@@ -1138,8 +1216,14 @@ export function LearningDashboardView({
                 <span className="text-[8px] font-mono font-extrabold text-black bg-[#39FF14] px-2 py-0.5 rounded-full uppercase tracking-wider">
                   {course.category}
                 </span>
-                <span className="text-[9px] font-mono text-slate-300">
-                  ⭐ {course.rating} ({course.reviewCount ?? 120} ratings)
+                <span 
+                  onClick={() => {
+                    setActiveTab('reviews');
+                    document.getElementById('nexus-learning-workspace')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="text-[9px] font-mono text-slate-300 hover:text-[#39FF14] hover:underline cursor-pointer flex items-center space-x-1"
+                >
+                  ⭐ {localRating.toFixed(1)} ({localReviewCount} ratings)
                 </span>
               </div>
               <h2 className="text-sm font-sans font-extrabold text-white leading-tight tracking-tight line-clamp-1">
@@ -1187,15 +1271,28 @@ export function LearningDashboardView({
             <span>GRADUATION 🎓</span>
           </div>
 
-          {/* Jump to unfinished lesson */}
-          <button
-            onClick={handleContinueLearning}
-            className="w-full py-3 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-lg shadow-[#39FF14]/10"
-            id="btn-continue-learning"
-          >
-            <Play size={12} fill="black" />
-            <span>Continue Learning</span>
-          </button>
+          {/* Jump to unfinished lesson and Rate Course button */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={handleContinueLearning}
+              className="py-3 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-lg shadow-[#39FF14]/10"
+              id="btn-continue-learning"
+            >
+              <Play size={11} fill="black" />
+              <span>Continue Class</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('reviews');
+                // Scroll down to the workspace tab panel
+                document.getElementById('nexus-learning-workspace')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-[#39FF14] hover:text-white font-mono font-bold text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
+            >
+              <span>⭐ Rate Course</span>
+            </button>
+          </div>
         </div>
 
         {/* ================= HIGH FIDELITY WIDGET TABS CONTROL ================= */}
@@ -1208,7 +1305,8 @@ export function LearningDashboardView({
               { id: 'notes', label: `Personal Notes (${notes.length})` },
               { id: 'bookmarks', label: `Bookmarks (${bookmarks.length})` },
               { id: 'resources', label: `Resources (${activeResources.length})` },
-              { id: 'quizzes', label: 'Quizzes & Assessments 🎯' }
+              { id: 'quizzes', label: 'Quizzes & Assessments 🎯' },
+              { id: 'reviews', label: 'Ratings & Reviews 🌟' }
             ].map(tab => {
               const isActive = activeTab === tab.id;
               return (
@@ -1561,6 +1659,189 @@ export function LearningDashboardView({
                     chapters={curriculum}
                     onShowNotification={onShowNotification}
                   />
+                </motion.div>
+              )}
+
+              {activeTab === 'reviews' && (
+                <motion.div
+                  key="reviews-panel"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="space-y-4 text-left"
+                >
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-white/5 pb-3 gap-2">
+                    <div>
+                      <h3 className="text-xs font-mono font-bold text-white tracking-wider uppercase flex items-center">
+                        Course Ratings & Feedback
+                      </h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5 font-sans">
+                        Real-time reviews and course evaluation from certified students.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => setShowReviewForm(!showReviewForm)}
+                      className="px-3.5 py-1.5 bg-[#39FF14] hover:bg-[#32e011] text-black text-[10px] font-mono font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center space-x-1"
+                      id="btn-trigger-review-form"
+                    >
+                      <span>{showReviewForm ? '✕ Close Form' : '★ Write a Review'}</span>
+                    </button>
+                  </div>
+
+                  {/* Submit Review Form */}
+                  <AnimatePresence>
+                    {showReviewForm && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-4 space-y-3">
+                          <h4 className="text-[11px] font-mono font-bold text-[#39FF14] uppercase">
+                            Submit Course Evaluation
+                          </h4>
+
+                          {/* Star Selector */}
+                          <div className="flex flex-col space-y-1">
+                            <span className="text-[9px] font-mono text-slate-400">YOUR RATING:</span>
+                            <div className="flex items-center space-x-1.5">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <button
+                                  key={star}
+                                  type="button"
+                                  onClick={() => setUserRating(star)}
+                                  className="text-lg focus:outline-none transition-all duration-150 hover:scale-110 cursor-pointer"
+                                  title={`${star} Stars`}
+                                >
+                                  {star <= userRating ? '★' : '☆'}
+                                </button>
+                              ))}
+                              <span className="text-[10px] font-mono text-amber-400 ml-1">
+                                {userRating === 5 ? 'Excellent (5/5)' : userRating === 4 ? 'Very Good (4/5)' : userRating === 3 ? 'Good (3/5)' : userRating === 2 ? 'Fair (2/5)' : 'Poor (1/5)'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Comment Box */}
+                          <div className="flex flex-col space-y-1">
+                            <span className="text-[9px] font-mono text-slate-400">YOUR COMMENTS & EXPERIENCE:</span>
+                            <textarea
+                              value={commentText}
+                              onChange={(e) => setCommentText(e.target.value)}
+                              placeholder="Write your honest review here... what did you like? what can be improved?"
+                              className="w-full h-20 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#39FF14]/50 font-sans resize-none"
+                              rows={3}
+                            />
+                          </div>
+
+                          <div className="flex justify-end space-x-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setShowReviewForm(false)}
+                              className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-[10px] font-mono font-bold text-slate-400 uppercase cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSubmitReview}
+                              disabled={submittingReview}
+                              className="px-3.5 py-1.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold font-mono text-[10px] uppercase rounded-xl transition-all cursor-pointer flex items-center space-x-1 disabled:opacity-50"
+                            >
+                              {submittingReview ? (
+                                <RefreshCw size={10} className="animate-spin" />
+                              ) : null}
+                              <span>{submittingReview ? 'Submitting...' : 'Submit Evaluation'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Course Rating Summary Metric card */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white/[0.01] border border-white/5 rounded-2xl p-4 items-center">
+                    <div className="text-center sm:border-r sm:border-white/5 sm:pr-4">
+                      <span className="text-[9px] font-mono text-slate-400 block uppercase">AVERAGE RATING</span>
+                      <div className="text-3xl font-mono font-extrabold text-[#39FF14] mt-0.5">
+                        {localRating.toFixed(1)}
+                      </div>
+                      <div className="text-[10px] text-amber-400 tracking-wider mt-1 font-mono">
+                        ★★★★★
+                      </div>
+                    </div>
+
+                    <div className="text-center sm:border-r sm:border-white/5 sm:px-4">
+                      <span className="text-[9px] font-mono text-slate-400 block uppercase">TOTAL REVIEWS</span>
+                      <div className="text-2xl font-mono font-extrabold text-white mt-1">
+                        {localReviewCount}
+                      </div>
+                      <p className="text-[9px] text-slate-500 mt-1 uppercase font-mono">
+                        100% VERIFIED
+                      </p>
+                    </div>
+
+                    <div className="text-center sm:pl-4 space-y-1">
+                      <span className="text-[9px] font-mono text-[#39FF14] block font-bold uppercase">GRADUATE FEEDBACK</span>
+                      <p className="text-[9.5px] text-slate-400 font-sans leading-snug italic">
+                        "Highly technical explanations and fantastic exam prep materials!"
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Reviews List */}
+                  <div className="space-y-2.5 max-h-[400px] overflow-y-auto scrollbar-thin">
+                    {loadingReviews ? (
+                      <div className="flex flex-col items-center justify-center py-8">
+                        <RefreshCw size={16} className="animate-spin text-[#39FF14] mb-1.5" />
+                        <span className="text-[10px] font-mono text-slate-400">RETRIEVING STUDENT EVALUATIONS...</span>
+                      </div>
+                    ) : reviews.length === 0 ? (
+                      <div className="text-center py-10 border border-dashed border-white/10 rounded-2xl">
+                        <span className="text-[10px] font-mono text-slate-400 uppercase">No reviews published yet for this course.</span>
+                        <p className="text-[9px] text-slate-500 mt-1">Be the first student to share your academic experience!</p>
+                      </div>
+                    ) : (
+                      reviews.map((rev) => (
+                        <div
+                          key={rev.reviewId}
+                          className="bg-white/[0.01] border border-white/5 hover:border-white/10 transition-all rounded-xl p-3 space-y-1.5"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center space-x-2">
+                              <div className="w-6 h-6 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-white text-[10px] font-bold overflow-hidden">
+                                {rev.studentPhotoURL ? (
+                                  <img src={rev.studentPhotoURL} alt={rev.studentName} className="w-full h-full object-cover" />
+                                ) : (
+                                  rev.studentName.charAt(0)
+                                )}
+                              </div>
+                              <div>
+                                <h5 className="text-[10px] font-mono font-bold text-white leading-none">
+                                  {rev.studentName}
+                                </h5>
+                                <span className="text-[8px] font-mono text-slate-500">
+                                  Verified Alumnus • {typeof rev.createdAt === 'string' ? rev.createdAt : rev.createdAt?.seconds ? new Date(rev.createdAt.seconds * 1000).toLocaleDateString() : 'Active Student'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-1 bg-amber-400/10 px-1.5 py-0.5 rounded-md">
+                              <span className="text-[9px] font-mono text-amber-400 font-extrabold">
+                                {rev.rating.toFixed(1)}
+                              </span>
+                              <span className="text-[9px] text-amber-400">★</span>
+                            </div>
+                          </div>
+
+                          <p className="text-[10.5px] text-slate-300 font-sans leading-relaxed pl-8">
+                            {rev.comment}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>

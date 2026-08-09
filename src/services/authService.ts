@@ -197,7 +197,8 @@ export const authService = {
 
       return { success: true, user };
     } catch (error: any) {
-      console.warn('Login failed:', error);
+      console.warn('Login attempt error:', error);
+
       let message = 'Incorrect email or password.';
       let operationNotAllowed = false;
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
@@ -346,16 +347,17 @@ export const authService = {
     }
   },
 
-  // Send standard Password Reset Email
+  // Send Password Reset Email via Firebase Auth
   async sendPasswordReset(email: string): Promise<{ success: boolean; error?: string }> {
+    const cleanEmail = email.toLowerCase().trim();
     try {
-      await sendPasswordResetEmail(auth, email);
+      await sendPasswordResetEmail(auth, cleanEmail);
       return { success: true };
     } catch (error: any) {
-      console.warn('Password reset email dispatch failed:', error);
+      console.warn('Password reset failed:', error);
       let message = 'Failed to dispatch password reset link.';
       if (error.code === 'auth/user-not-found') {
-        message = 'This email is not registered with our academy.';
+        message = 'This email is not registered.';
       } else if (error.code === 'auth/invalid-email') {
         message = 'The email address format is invalid.';
       }

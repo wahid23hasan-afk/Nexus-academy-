@@ -19,12 +19,21 @@ import {
   DollarSign,
   Bell,
   Send,
-  Megaphone
+  Megaphone,
+  Video,
+  Upload,
+  Play,
+  Film
 } from 'lucide-react';
-import { Purchase, Coupon, PaymentMethodConfig, Course } from '../types/course';
+import { Purchase, Coupon, PaymentMethodConfig, Course, CurriculumChapter, CurriculumLesson } from '../types/course';
+import { LessonVideo } from '../services/learningService';
 import { Notification, Announcement, NotificationCategory } from '../types/notification';
 import { courseService } from '../services/courseService';
 import { notificationService } from '../services/notificationService';
+import { learningService } from '../services/learningService';
+import { db, storage } from '../services/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface AdminPanelModalProps {
   isOpen: boolean;
@@ -33,7 +42,131 @@ interface AdminPanelModalProps {
 }
 
 export function AdminPanelModal({ isOpen, onClose, onShowNotification }: AdminPanelModalProps) {
-  const [activeTab, setActiveTab] = useState<'approvals' | 'notifications' | 'coupons' | 'payments'>('approvals');
+  const [activeTab, setActiveTab] = useState<'approvals' | 'notifications' | 'coupons' | 'payments' | 'curriculum'>('approvals');
+
+  // Curriculum / Video Management tab state
+  const [selectedCurriculumCourseId, setSelectedCurriculumCourseId] = useState<string>('');
+  const [chapters, setChapters] = useState<CurriculumChapter[]>([]);
+  const [selectedChapterId, setSelectedChapterId] = useState<string>('');
+  const [selectedLesson, setSelectedLesson] = useState<CurriculumLesson | null>(null);
+  const [lessonVideo, setLessonVideo] = useState<LessonVideo | null>(null);
+  const [loadingCurriculum, setLoadingCurriculum] = useState<boolean>(false);
+  const [loadingVideo, setLoadingVideo] = useState<boolean>(false);
+  
+  // Edit Video Form state
+  const [editVideoUrl, setEditVideoUrl] = useState<string>('');
+  const [editVideoDuration, setEditVideoDuration] = useState<number>(180);
+  const [editVideoThumbnail, setEditVideoThumbnail] = useState<string>('');
+  const [uploadingFile, setUploadingFile] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [savingVideo, setSavingVideo] = useState<boolean>(false);
+
+  // Curriculum helper functions
+  const loadCurriculum = async (courseId: string) => {
+    if (!courseId) return;
+    setLoadingCurriculum(true);
+    setSelectedChapterId('');
+    setSelectedLesson(null);
+    setLessonVideo(null);
+    try {
+      const cur = await courseService.getCurriculum(courseId);
+      setChapters(cur || []);
+      if (cur && cur.length > 0) {
+        setSelectedChapterId(cur[0].chapterId);
+      }
+    } catch (err) {
+      console.error('Error loading curriculum chapters:', err);
+      onShowNotification('Failed to load curriculum chapters.', 'error');
+    } finally {
+      setLoadingCurriculum(false);
+    }
+  };
+
+  const loadLessonVideo = async (courseId: string, lessonId: string, seqOrder: number) => {
+    setLoadingVideo(true);
+    setLessonVideo(null);
+    try {
+      const vid = await learningService.getLessonVideo(courseId, lessonId, seqOrder);
+      setLessonVideo(vid);
+      setEditVideoUrl(vid.videoUrl);
+      setEditVideoDuration(vid.duration);
+      setEditVideoThumbnail(vid.thumbnailUrl || '');
+    } catch (err) {
+      console.error('Error loading lesson video details:', err);
+    } finally {
+      setLoadingVideo(false);
+    }
+  };
+
+  const handleSaveVideoDetails = async () => {
+    if (!selectedCurriculumCourseId || !selectedLesson || !lessonVideo) {
+      onShowNotification('No lesson selected.', 'error');
+      return;
+    }
+    setSavingVideo(true);
+    try {
+      const videoDoc: LessonVideo = {
+        videoId: lessonVideo.videoId,
+        lessonId: selectedLesson.lessonId,
+        courseId: selectedCurriculumCourseId,
+        videoUrl: editVideoUrl.trim(),
+        thumbnailUrl: editVideoThumbnail.trim() || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80',
+        duration: Number(editVideoDuration) || 180
+      };
+      await setDoc(doc(db, 'lessonVideos', lessonVideo.videoId), videoDoc);
+      setLessonVideo(videoDoc);
+      onShowNotification('🎥 Video curriculum updated successfully!', 'success');
+    } catch (err) {
+      console.error('Error saving video info to Firestore:', err);
+      onShowNotification('Failed to save video details.', 'error');
+    } finally {
+      setSavingVideo(false);
+    }
+  };
+
+  const handleUploadVideoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!selectedCurriculumCourseId || !selectedLesson || !lessonVideo) {
+      onShowNotification('Please select a course and lesson first.', 'error');
+      return;
+    }
+
+    setUploadingFile(true);
+    setUploadProgress(10);
+    try {
+      const storagePath = `lessonVideos/${selectedCurriculumCourseId}/${selectedLesson.lessonId}/${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, storagePath);
+      setUploadProgress(30);
+      const snapshot = await uploadBytes(storageRef, file);
+      setUploadProgress(70);
+      const downloadUrl = await getDownloadURL(snapshot.ref);
+      setUploadProgress(100);
+      setEditVideoUrl(downloadUrl);
+      
+      // Attempt to get video duration from file using object URL
+      const videoEl = document.createElement('video');
+      videoEl.src = URL.createObjectURL(file);
+      videoEl.onloadedmetadata = () => {
+        setEditVideoDuration(Math.round(videoEl.duration) || 180);
+      };
+
+      onShowNotification('🎉 Video uploaded to Storage successfully! Click save to apply changes.', 'success');
+    } catch (err) {
+      console.error('Error uploading video file to storage:', err);
+      onShowNotification('Storage upload failed. Make sure rules allow storage writes.', 'error');
+    } finally {
+      setUploadingFile(false);
+      setUploadProgress(0);
+    }
+  };
+
+  // Watch selected course selection changes
+  useEffect(() => {
+    if (selectedCurriculumCourseId) {
+      loadCurriculum(selectedCurriculumCourseId);
+    }
+  }, [selectedCurriculumCourseId]);
 
   // Data states
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -103,6 +236,7 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification }: AdminPa
       setSentAnnouncements(allAnns);
       if (allCourses.length > 0) {
         setSelectedCourseId(prev => prev || allCourses[0].courseId);
+        setSelectedCurriculumCourseId(prev => prev || allCourses[0].courseId);
       }
     } catch (err) {
       console.error('Failed loading admin data:', err);
@@ -137,7 +271,7 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification }: AdminPa
       });
 
       // 2. Optionally create Global Banner Announcement
-      if (alsoPostAnnouncement && notifTargetType === 'all') {
+      if (alsoPostAnnouncement || notifCategory === 'announcements') {
         await notificationService.createAnnouncement({
           title: notifTitle,
           message: notifMessage,
@@ -446,6 +580,18 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification }: AdminPa
             <CreditCard size={13} />
             <span>PAYMENTS ({paymentMethods.length})</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('curriculum')}
+            className={`flex-1 min-w-[140px] py-2 rounded-xl text-[11px] font-mono font-bold transition-all flex items-center justify-center space-x-1 cursor-pointer ${
+              activeTab === 'curriculum'
+                ? 'bg-[#39FF14] text-black shadow-md'
+                : 'text-slate-400 hover:text-white bg-white/[0.02]'
+            }`}
+          >
+            <Film size={13} />
+            <span>CURRICULUM / VIDEOS</span>
+          </button>
         </div>
 
         {/* Modal Content */}
@@ -726,20 +872,18 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification }: AdminPa
                   </div>
 
                   {/* Option to also pin as Top Banner Announcement */}
-                  {notifTargetType === 'all' && (
-                    <div className="flex items-center space-x-2 pt-1">
-                      <input
-                        type="checkbox"
-                        id="alsoPostAnn"
-                        checked={alsoPostAnnouncement}
-                        onChange={(e) => setAlsoPostAnnouncement(e.target.checked)}
-                        className="rounded border-white/20 bg-white/5 text-[#39FF14] focus:ring-0 cursor-pointer"
-                      />
-                      <label htmlFor="alsoPostAnn" className="text-slate-300 text-[11px] cursor-pointer">
-                        Pin as a High-Priority Top Banner Announcement
-                      </label>
-                    </div>
-                  )}
+                  <div className="flex items-center space-x-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="alsoPostAnn"
+                      checked={alsoPostAnnouncement}
+                      onChange={(e) => setAlsoPostAnnouncement(e.target.checked)}
+                      className="rounded border-white/20 bg-white/5 text-[#39FF14] focus:ring-0 cursor-pointer"
+                    />
+                    <label htmlFor="alsoPostAnn" className="text-slate-300 text-[11px] cursor-pointer">
+                      Pin as a High-Priority Top Banner Announcement
+                    </label>
+                  </div>
 
                   <button
                     type="submit"
@@ -1052,6 +1196,272 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification }: AdminPa
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: CURRICULUM & VIDEOS MANAGEMENT */}
+          {activeTab === 'curriculum' && (
+            <div className="space-y-4 font-mono">
+              <div className="bg-slate-950 border border-[#39FF14]/30 rounded-2xl p-4 space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/5 pb-3">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wide flex items-center space-x-2">
+                      <Video size={14} className="text-[#39FF14]" />
+                      <span>Curriculum Video & Material Manager</span>
+                    </h3>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Upload video files or configure video lessons for students.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[10px] text-slate-400">Select Course:</span>
+                    <select
+                      value={selectedCurriculumCourseId}
+                      onChange={(e) => setSelectedCurriculumCourseId(e.target.value)}
+                      className="px-3 py-1.5 bg-black border border-white/10 rounded-xl text-xs text-white focus:border-[#39FF14] outline-none"
+                    >
+                      {courses.map(c => (
+                        <option key={c.courseId} value={c.courseId}>
+                          {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {loadingCurriculum ? (
+                  <div className="py-12 text-center text-xs text-slate-500 flex flex-col items-center justify-center space-y-2">
+                    <RefreshCw className="animate-spin text-[#39FF14]" size={20} />
+                    <span>Loading chapters and curriculum...</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    {/* LEFT COLUMN: CHAPTERS & LESSONS SELECTION */}
+                    <div className="lg:col-span-5 space-y-3 border-r border-white/5 pr-0 lg:pr-4">
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1 uppercase font-bold">1. Select Chapter</label>
+                        <select
+                          value={selectedChapterId}
+                          onChange={(e) => {
+                            setSelectedChapterId(e.target.value);
+                            setSelectedLesson(null);
+                            setLessonVideo(null);
+                          }}
+                          className="w-full px-3 py-2 bg-black border border-white/10 rounded-xl text-xs text-white focus:border-[#39FF14] outline-none"
+                        >
+                          <option value="">-- Choose Chapter --</option>
+                          {chapters.map(ch => (
+                            <option key={ch.chapterId} value={ch.chapterId}>
+                              CH {ch.sequenceOrder}: {ch.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1 uppercase font-bold">2. Select Lesson</label>
+                        <div className="bg-black/40 border border-white/5 rounded-xl max-h-[300px] overflow-y-auto p-1.5 space-y-1">
+                          {selectedChapterId ? (
+                            chapters
+                              .find(ch => ch.chapterId === selectedChapterId)
+                              ?.lessons.map(lesson => {
+                                const isSelected = selectedLesson?.lessonId === lesson.lessonId;
+                                return (
+                                  <button
+                                    key={lesson.lessonId}
+                                    onClick={() => {
+                                      setSelectedLesson(lesson);
+                                      loadLessonVideo(selectedCurriculumCourseId, lesson.lessonId, lesson.sequenceOrder);
+                                    }}
+                                    className={`w-full text-left p-2 rounded-lg text-xs font-mono transition-all flex items-center justify-between ${
+                                      isSelected
+                                        ? 'bg-[#39FF14]/10 border border-[#39FF14]/30 text-[#39FF14]'
+                                        : 'bg-white/[0.01] hover:bg-white/5 text-slate-300 border border-transparent'
+                                    }`}
+                                  >
+                                    <div className="truncate pr-2">
+                                      <span className="text-[10px] text-slate-500 mr-1">#{lesson.sequenceOrder}</span>
+                                      {lesson.title}
+                                    </div>
+                                    <span className="text-[9px] text-slate-500 whitespace-nowrap bg-white/5 px-1.5 py-0.5 rounded">
+                                      {lesson.duration}
+                                    </span>
+                                  </button>
+                                );
+                              })
+                          ) : (
+                            <div className="py-6 text-center text-xs text-slate-600">
+                              Please select a chapter first
+                            </div>
+                          )}
+                          {selectedChapterId && chapters.find(ch => ch.chapterId === selectedChapterId)?.lessons.length === 0 && (
+                            <div className="py-6 text-center text-xs text-slate-600">
+                              No lessons inside this chapter
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: VIDEO CONFIG & UPLOAD */}
+                    <div className="lg:col-span-7 space-y-3">
+                      {!selectedLesson ? (
+                        <div className="h-full min-h-[220px] bg-black/20 rounded-2xl border border-dashed border-white/10 flex flex-col items-center justify-center text-center p-6 text-slate-500">
+                          <Film size={28} className="text-slate-600 mb-2 animate-pulse" />
+                          <p className="text-xs font-bold text-slate-400">No Lesson Selected</p>
+                          <p className="text-[10px] text-slate-600 max-w-[240px] mt-1">
+                            Click a chapter and then select a lesson on the left to configure or upload its video.
+                          </p>
+                        </div>
+                      ) : loadingVideo ? (
+                        <div className="h-full min-h-[220px] flex flex-col items-center justify-center text-center p-6 space-y-2 text-slate-500">
+                          <RefreshCw className="animate-spin text-[#39FF14]" size={20} />
+                          <span className="text-xs">Fetching video record...</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="bg-black/30 border border-[#39FF14]/10 rounded-xl p-3">
+                            <span className="text-[9px] text-[#39FF14] font-bold uppercase tracking-wider block mb-0.5">CURRENT LESSON</span>
+                            <h4 className="text-xs font-bold text-white">{selectedLesson.title}</h4>
+                            <div className="flex items-center space-x-3 text-[10px] text-slate-400 mt-1.5">
+                              <span>Chapter: {chapters.find(ch => ch.chapterId === selectedChapterId)?.title}</span>
+                              <span>•</span>
+                              <span>Duration: {selectedLesson.duration}</span>
+                            </div>
+                          </div>
+
+                          {/* FILE UPLOAD DIRECTIVE */}
+                          <div className="space-y-2">
+                            <label className="text-[10px] text-slate-400 block uppercase font-bold">
+                              Option A: Upload Video File to Firebase Storage
+                            </label>
+                            
+                            <div className="border border-dashed border-white/20 rounded-xl p-4 bg-black/40 text-center hover:border-[#39FF14]/50 transition-colors relative">
+                              {uploadingFile ? (
+                                <div className="space-y-2 py-2">
+                                  <RefreshCw className="animate-spin mx-auto text-[#39FF14]" size={24} />
+                                  <p className="text-xs text-white font-bold">Uploading file to Firebase Storage...</p>
+                                  <div className="w-full bg-slate-900 rounded-full h-1.5 max-w-[200px] mx-auto overflow-hidden">
+                                    <div 
+                                      className="bg-[#39FF14] h-1.5 rounded-full transition-all duration-300" 
+                                      style={{ width: `${uploadProgress}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-[9px] text-slate-400">{uploadProgress}% complete</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-2 py-1">
+                                  <Upload className="mx-auto text-slate-400" size={24} />
+                                  <p className="text-xs text-slate-300">
+                                    Drag & drop your video file here, or <span className="text-[#39FF14] underline cursor-pointer">browse</span>
+                                  </p>
+                                  <p className="text-[9px] text-slate-500">Supports MP4, WebM up to 50MB (Storage optimized)</p>
+                                  
+                                  <input
+                                    type="file"
+                                    accept="video/*"
+                                    onChange={handleUploadVideoFile}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* MANUAL INPUTS */}
+                          <div className="space-y-2 border-t border-white/5 pt-3">
+                            <label className="text-[10px] text-slate-400 block uppercase font-bold">
+                              Option B: Custom Video Configuration
+                            </label>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="md:col-span-2">
+                                <span className="text-[9px] text-slate-400">VIDEO STREAMING URL (DIRECT MP4, YOUTUBE, VIMEO):</span>
+                                <input
+                                  type="text"
+                                  value={editVideoUrl}
+                                  onChange={(e) => setEditVideoUrl(e.target.value)}
+                                  placeholder="https://example.com/video.mp4"
+                                  className="w-full px-3 py-1.5 mt-1 bg-black border border-white/10 rounded-xl text-xs text-white focus:border-[#39FF14] outline-none"
+                                />
+                              </div>
+
+                              <div>
+                                <span className="text-[9px] text-slate-400">VIDEO DURATION (SECONDS):</span>
+                                <input
+                                  type="number"
+                                  value={editVideoDuration}
+                                  onChange={(e) => setEditVideoDuration(Number(e.target.value))}
+                                  placeholder="180"
+                                  className="w-full px-3 py-1.5 mt-1 bg-black border border-white/10 rounded-xl text-xs text-white focus:border-[#39FF14] outline-none"
+                                />
+                              </div>
+
+                              <div>
+                                <span className="text-[9px] text-slate-400">THUMBNAIL URL (OPTIONAL):</span>
+                                <input
+                                  type="text"
+                                  value={editVideoThumbnail}
+                                  onChange={(e) => setEditVideoThumbnail(e.target.value)}
+                                  placeholder="https://images.unsplash.com/photo..."
+                                  className="w-full px-3 py-1.5 mt-1 bg-black border border-white/10 rounded-xl text-xs text-white focus:border-[#39FF14] outline-none"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* VIDEO PRESETS FOR QUICK TESTING */}
+                          <div className="space-y-1.5 border-t border-white/5 pt-2">
+                            <span className="text-[9px] text-slate-400 block uppercase font-bold">QUICK TEST: High-Quality Educational Preset Loops</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {[
+                                { name: 'Big Buck Bunny', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' },
+                                { name: 'Elephant\'s Dream', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4' },
+                                { name: 'For Bigger Fun', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4' },
+                                { name: 'Tears of Steel', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4' }
+                              ].map(p => (
+                                <button
+                                  key={p.name}
+                                  onClick={() => {
+                                    setEditVideoUrl(p.url);
+                                    setEditVideoDuration(600);
+                                    onShowNotification(`Preset "${p.name}" selected! Click Save to apply.`, 'success');
+                                  }}
+                                  className="px-2 py-1 bg-white/5 hover:bg-[#39FF14]/10 hover:text-[#39FF14] rounded text-[9px] font-mono text-slate-400 border border-white/10 hover:border-[#39FF14]/30 cursor-pointer transition-all"
+                                >
+                                  {p.name}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* ACTION BUTTON */}
+                          <div className="border-t border-white/5 pt-3">
+                            <button
+                              onClick={handleSaveVideoDetails}
+                              disabled={savingVideo}
+                              className="w-full py-2 bg-[#39FF14] text-black text-xs font-mono font-bold rounded-xl uppercase tracking-wider hover:bg-opacity-95 disabled:bg-slate-700 disabled:text-slate-500 transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                            >
+                              {savingVideo ? (
+                                <>
+                                  <RefreshCw className="animate-spin" size={13} />
+                                  <span>Saving Curriculum...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle2 size={13} />
+                                  <span>Save Video Settings</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

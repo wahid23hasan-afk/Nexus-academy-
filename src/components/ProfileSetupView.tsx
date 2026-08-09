@@ -424,29 +424,29 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <h2 className="text-xl font-display font-semibold text-white tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-display font-semibold text-white tracking-tight">
             Scholar Enrollment
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-400 mt-1 leading-relaxed">
             Complete your high-end credentials to initialize your account.
           </p>
         </div>
         
         <button
           onClick={handleLogout}
-          className="p-2 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-slate-400 hover:text-red-400 rounded-xl cursor-pointer"
+          className="p-3 bg-white/5 border border-white/10 hover:bg-white/10 active:bg-white/15 transition-all text-slate-300 hover:text-red-400 rounded-xl cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center"
           title="Sign Out"
         >
-          <LogOut size={14} />
+          <LogOut size={16} />
         </button>
       </div>
 
       {/* Main setup form */}
-      <form onSubmit={handleSubmit} className="flex-1 my-5 space-y-4">
+      <form onSubmit={handleSubmit} className="flex-1 my-4 space-y-4">
         {/* Profile Picture Slot */}
-        <div className="flex flex-col items-center justify-center space-y-2">
+        <div className="flex flex-col items-center justify-center space-y-2.5">
           <div className="relative group">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-[#39FF14]/20 overflow-hidden flex items-center justify-center shadow-md relative">
+            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-[#39FF14]/30 overflow-hidden flex items-center justify-center shadow-md relative">
               {avatarPreview ? (
                 <img 
                   src={avatarPreview || undefined} 
@@ -455,26 +455,26 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <User size={32} className="text-slate-500" />
+                <User size={36} className="text-slate-500" />
               )}
             </div>
 
             {/* Dynamic camera/upload action circle */}
-            <div className="absolute -bottom-1 -right-1 flex space-x-1">
+            <div className="absolute -bottom-2 -right-2 flex space-x-1.5">
               <button
                 type="button"
                 onClick={startCamera}
-                className="w-7 h-7 rounded-lg bg-[#39FF14] text-black hover:bg-[#32e011] flex items-center justify-center shadow-md cursor-pointer transition-all hover:scale-105"
+                className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl bg-[#39FF14] text-black hover:bg-[#32e011] flex items-center justify-center shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95"
                 title="Use Camera"
               >
-                <Camera size={13} />
+                <Camera size={16} />
               </button>
               
               <label
-                className="w-7 h-7 rounded-lg bg-white/10 border border-white/15 text-white hover:bg-white/20 flex items-center justify-center shadow-md cursor-pointer transition-all hover:scale-105"
+                className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl bg-white/10 border border-white/20 text-white hover:bg-white/20 flex items-center justify-center shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95"
                 title="Upload Image"
               >
-                <Upload size={13} />
+                <Upload size={16} />
                 <input
                   type="file"
                   accept="image/*"
@@ -485,16 +485,16 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
             </div>
           </div>
           
-          <span className="text-[10px] font-mono text-slate-500 tracking-wider">
+          <span className="text-[10px] font-mono text-slate-400 tracking-wider">
             AVATAR PORTRAIT • CAMERA / UPLOAD
           </span>
         </div>
 
         {/* Fields Container */}
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           {/* Full Name */}
           <div>
-            <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5">
+            <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 ml-1">
               Full Name
             </label>
             <div className="relative">
@@ -504,81 +504,87 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Valued Scholar"
-                className="w-full glass-panel-light border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-[#39FF14] transition-all"
+                className="w-full glass-panel-light border border-white/10 rounded-xl px-4 py-3.5 min-h-[48px] text-base sm:text-sm text-slate-100 focus:outline-none focus:border-[#39FF14] transition-all"
               />
             </div>
           </div>
 
           {/* Username */}
-          <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+          <motion.div
+            animate={usernameError ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
+            transition={{ duration: 0.35, ease: 'easeInOut' }}
+          >
+            <div className="flex justify-between items-center mb-1.5 ml-1">
+              <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
                 Unique Username
               </label>
               {isUsernameChecking && (
-                <RefreshCw size={10} className="text-[#39FF14] animate-spin" />
+                <RefreshCw size={12} className="text-[#39FF14] animate-spin" />
               )}
             </div>
             <div className="relative">
-              <span className="absolute left-3.5 top-2.5 text-slate-500 text-xs font-mono">@</span>
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-mono pointer-events-none">@</span>
               <input
                 type="text"
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value.replace(/\s+/g, ''))}
                 placeholder="username"
-                className={`w-full glass-panel-light border ${usernameError ? 'border-red-500/40' : 'border-white/10'} rounded-xl pl-8 pr-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-[#39FF14] transition-all font-mono`}
+                className={`w-full glass-panel-light border ${usernameError ? 'border-red-500/40' : 'border-white/10'} rounded-xl pl-9 pr-4 py-3.5 min-h-[48px] text-base sm:text-sm text-slate-100 focus:outline-none focus:border-[#39FF14] transition-all font-mono`}
               />
             </div>
             {usernameError && (
-              <p className="text-[11px] text-red-400 mt-1.5 flex items-center space-x-1">
-                <AlertCircle size={10} />
+              <p className="text-xs text-red-400 mt-1.5 flex items-center space-x-1 ml-1">
+                <AlertCircle size={12} />
                 <span>{usernameError}</span>
               </p>
             )}
             {!usernameError && username && !isUsernameChecking && (
-              <p className="text-[11px] text-emerald-400 mt-1.5 flex items-center space-x-1 font-mono">
-                <Check size={10} />
+              <p className="text-xs text-emerald-400 mt-1.5 flex items-center space-x-1 font-mono ml-1">
+                <Check size={12} />
                 <span>Username available</span>
               </p>
             )}
-          </div>
+          </motion.div>
 
           {/* Phone Number */}
-          <div>
-            <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5">
+          <motion.div
+            animate={phoneError ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
+            transition={{ duration: 0.35, ease: 'easeInOut' }}
+          >
+            <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 ml-1">
               Phone Number
             </label>
             <div className="relative">
-              <Phone size={12} className="absolute left-3.5 top-3.5 text-slate-500" />
+              <Phone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
               <input
                 type="tel"
                 required
                 value={phoneNumber}
                 onChange={handlePhoneChange}
                 placeholder="+1 555-0199"
-                className={`w-full glass-panel-light border ${phoneError ? 'border-red-500/40' : 'border-white/10'} rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-[#39FF14] transition-all`}
+                className={`w-full glass-panel-light border ${phoneError ? 'border-red-500/40' : 'border-white/10'} rounded-xl pl-12 pr-4 py-3.5 min-h-[48px] text-base sm:text-sm text-slate-100 focus:outline-none focus:border-[#39FF14] transition-all`}
               />
             </div>
             {phoneError && (
-              <p className="text-[11px] text-red-400 mt-1.5 flex items-center space-x-1">
-                <AlertCircle size={10} />
+              <p className="text-xs text-red-400 mt-1.5 flex items-center space-x-1 ml-1">
+                <AlertCircle size={12} />
                 <span>{phoneError}</span>
               </p>
             )}
-          </div>
+          </motion.div>
 
           {/* Double Column: Gender & DOB */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Gender */}
             <div>
-              <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5">
+              <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 ml-1">
                 Gender (Optional)
               </label>
               <select
                 value={gender}
                 onChange={(e) => setGender(e.target.value)}
-                className="w-full bg-[#090d16] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-[#39FF14] transition-all cursor-pointer"
+                className="w-full bg-[#090d16] border border-white/10 rounded-xl px-4 py-3.5 min-h-[48px] text-base sm:text-xs text-slate-200 focus:outline-none focus:border-[#39FF14] transition-all cursor-pointer"
               >
                 <option value="">Select Gender</option>
                 <option value="male">Male</option>
@@ -590,16 +596,16 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
 
             {/* Date of Birth */}
             <div>
-              <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5">
+              <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 ml-1">
                 Birth Date (Optional)
               </label>
               <div className="relative">
-                <Calendar size={12} className="absolute left-3 top-3.5 text-slate-500 pointer-events-none" />
+                <Calendar size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 <input
                   type="date"
                   value={dateOfBirth}
                   onChange={(e) => setDateOfBirth(e.target.value)}
-                  className="w-full glass-panel-light border border-white/10 rounded-xl pl-8 pr-2 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-[#39FF14] transition-all cursor-pointer font-mono"
+                  className="w-full glass-panel-light border border-white/10 rounded-xl pl-11 pr-3 py-3.5 min-h-[48px] text-base sm:text-xs text-slate-200 focus:outline-none focus:border-[#39FF14] transition-all cursor-pointer font-mono"
                 />
               </div>
             </div>
@@ -610,25 +616,25 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
         <motion.button
           type="submit"
           disabled={isSubmitting || !!usernameError || !!phoneError}
-          whileHover={{ scale: (isSubmitting || !!usernameError || !!phoneError) ? 1 : 1.02 }}
+          whileHover={{ scale: (isSubmitting || !!usernameError || !!phoneError) ? 1 : 1.01 }}
           whileTap={{ scale: (isSubmitting || !!usernameError || !!phoneError) ? 1 : 0.98 }}
           className="
-            w-full py-3.5 px-6 rounded-2xl bg-[#39FF14] text-black font-semibold 
-            text-xs tracking-wide shadow-[0_4px_20px_rgba(57,255,20,0.15)] 
-            hover:shadow-[0_4px_30px_rgba(57,255,20,0.3)]
+            w-full py-4 px-6 min-h-[50px] rounded-2xl bg-[#39FF14] text-black font-semibold 
+            text-sm tracking-wide shadow-[0_4px_20px_rgba(57,255,20,0.15)] 
+            hover:shadow-[0_4px_30px_rgba(57,255,20,0.3)] active:scale-[0.98]
             disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none
             transition-all duration-300 flex items-center justify-center space-x-2 cursor-pointer mt-4
           "
         >
           {isSubmitting ? (
             <>
-              <RefreshCw size={14} className="animate-spin mr-1" />
+              <RefreshCw size={16} className="animate-spin mr-1" />
               <span>SAVING ENROLLMENT RECORDS...</span>
             </>
           ) : (
             <>
               <span>Initialize My Profile</span>
-              <ChevronRight size={14} />
+              <ChevronRight size={16} />
             </>
           )}
         </motion.button>

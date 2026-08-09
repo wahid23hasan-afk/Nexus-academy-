@@ -51,6 +51,17 @@ export function CourseDetailsView({
   onEnroll,
   onSelectCourse
 }: CourseDetailsViewProps) {
+  if (!course) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#050811] text-slate-100 min-h-screen">
+        <p className="text-sm font-mono text-slate-400">Course information is unavailable.</p>
+        <button onClick={onBack} className="mt-4 px-4 py-2 bg-[#39FF14] text-black font-bold text-xs rounded-xl cursor-pointer">
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
   // Firestore data states
   const [instructor, setInstructor] = useState<Instructor | null>(null);
   const [curriculum, setCurriculum] = useState<CurriculumChapter[]>([]);
@@ -62,6 +73,16 @@ export function CourseDetailsView({
   const [loadingCurriculum, setLoadingCurriculum] = useState(true);
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [loadingRelated, setLoadingRelated] = useState(true);
+
+  // Local rating and review stats for instant UI update
+  const [localRating, setLocalRating] = useState<number>(() => typeof course.rating === 'number' ? course.rating : Number(course.rating) || 5.0);
+  const [localReviewCount, setLocalReviewCount] = useState<number>(() => course.reviewCount || 120);
+
+  // Review form states
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [userRating, setUserRating] = useState(5);
+  const [commentText, setCommentText] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   // Expansion states
   const [isDescExpanded, setIsDescExpanded] = useState(false);
@@ -81,6 +102,10 @@ export function CourseDetailsView({
     setLoadingCurriculum(true);
     setLoadingReviews(true);
     setLoadingRelated(true);
+
+    // Initialize local stats from course prop
+    setLocalRating(typeof course.rating === 'number' ? course.rating : Number(course.rating) || 5.0);
+    setLocalReviewCount(course.reviewCount || 120);
 
     const loadDetails = async () => {
       try {
@@ -117,6 +142,53 @@ export function CourseDetailsView({
 
     loadDetails();
   }, [course.courseId]);
+
+  // Handle Review Submission
+  const handleSubmitReview = async () => {
+    if (!commentText.trim()) {
+      onShowNotification('Please write a brief comment first.', 'error');
+      return;
+    }
+
+    setSubmittingReview(true);
+    try {
+      const reviewObj = {
+        courseId: course.courseId,
+        studentName: userProfile?.fullName || 'Verified Student',
+        studentPhotoURL: userProfile?.photoURL || '',
+        rating: userRating,
+        comment: commentText.trim()
+      };
+
+      const newReview = await courseService.addReview(reviewObj);
+      
+      // Update local reviews list
+      setReviews(prev => [newReview, ...prev]);
+      
+      // Calculate updated ratings locally for instant UI update
+      const updatedCount = localReviewCount + 1;
+      const updatedRating = Number(((localRating * localReviewCount + userRating) / updatedCount).toFixed(1));
+      
+      setLocalRating(updatedRating);
+      setLocalReviewCount(updatedCount);
+
+      // Mutate the actual prop object fields as fallback
+      course.rating = updatedRating;
+      course.reviewCount = updatedCount;
+
+      // Clean up form
+      setCommentText('');
+      setUserRating(5);
+      setShowReviewForm(false);
+      
+      onShowNotification('🌟 Thank you! Your rating and review have been published.', 'success');
+    } catch (err) {
+      console.error('Error submitting review:', err);
+      onShowNotification('Failed to submit your review. Please try again.', 'error');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
 
   // Toggle chapter expansion
   const toggleChapter = (chapterId: string) => {
@@ -266,7 +338,7 @@ export function CourseDetailsView({
               <div>
                 <p className="text-[9px] text-slate-500">RATING</p>
                 <p className="font-bold text-white">
-                  {course.rating.toFixed(1)} <span className="text-slate-400 font-normal">({course.reviewCount || 120} reviews)</span>
+                  {localRating.toFixed(1)} <span className="text-slate-400 font-normal">({localReviewCount} reviews)</span>
                 </p>
               </div>
             </div>
@@ -391,42 +463,58 @@ export function CourseDetailsView({
             </button>
 
             {/* Learning Outcomes (Expandable checklist) */}
-            {course.learningOutcomes && course.learningOutcomes.length > 0 && (
-              <div className="pt-3 border-t border-white/5 space-y-2.5">
-                <h3 className="text-xs font-semibold text-white">Syllabus Learning Outcomes</h3>
-                <div className="grid gap-2 text-slate-300 text-[11px] leading-relaxed">
-                  {course.learningOutcomes.map((outcome, i) => (
-                    <div key={i} className="flex items-start space-x-2">
-                      <span className="mt-0.5 text-[#39FF14] flex-shrink-0">✔</span>
-                      <span>{outcome}</span>
-                    </div>
-                  ))}
+            {(() => {
+              const outcomesList = Array.isArray(course.learningOutcomes)
+                ? course.learningOutcomes
+                : typeof course.learningOutcomes === 'string'
+                  ? (course.learningOutcomes as string).split('\n').flatMap(s => s.split(',')).map(s => s.trim()).filter(Boolean)
+                  : [];
+              if (outcomesList.length === 0) return null;
+              return (
+                <div className="pt-3 border-t border-white/5 space-y-2.5">
+                  <h3 className="text-xs font-semibold text-white">Syllabus Learning Outcomes</h3>
+                  <div className="grid gap-2 text-slate-300 text-[11px] leading-relaxed">
+                    {outcomesList.map((outcome, i) => (
+                      <div key={i} className="flex items-start space-x-2">
+                        <span className="mt-0.5 text-[#39FF14] flex-shrink-0">✔</span>
+                        <span>{outcome}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </section>
 
         {/* ================= WHAT YOU WILL LEARN CHECKLIST ================= */}
-        {course.skillsGained && course.skillsGained.length > 0 && (
-          <section className="space-y-3">
-            <h2 className="text-sm font-mono uppercase tracking-widest text-slate-400 flex items-center">
-              <Award size={13} className="mr-2 text-[#39FF14]" />
-              <span>Skills & Tools You Will Gain</span>
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              {course.skillsGained.map((skill, index) => (
-                <span 
-                  key={index}
-                  className="px-3.5 py-2 rounded-xl text-xs bg-white/[0.02] border border-white/5 text-slate-300 font-sans font-semibold flex items-center space-x-1.5"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#39FF14]" />
-                  <span>{skill}</span>
-                </span>
-              ))}
-            </div>
-          </section>
-        )}
+        {(() => {
+          const skillsList = Array.isArray(course.skillsGained)
+            ? course.skillsGained
+            : typeof course.skillsGained === 'string'
+              ? (course.skillsGained as string).split(',').map(s => s.trim()).filter(Boolean)
+              : [];
+          if (skillsList.length === 0) return null;
+          return (
+            <section className="space-y-3">
+              <h2 className="text-sm font-mono uppercase tracking-widest text-slate-400 flex items-center">
+                <Award size={13} className="mr-2 text-[#39FF14]" />
+                <span>Skills & Tools You Will Gain</span>
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {skillsList.map((skill, index) => (
+                  <span 
+                    key={index}
+                    className="px-3.5 py-2 rounded-xl text-xs bg-white/[0.02] border border-white/5 text-slate-300 font-sans font-semibold flex items-center space-x-1.5"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#39FF14]" />
+                    <span>{skill}</span>
+                  </span>
+                ))}
+              </div>
+            </section>
+          );
+        })()}
 
         {/* ================= COURSE CURRICULUM (CHAPTERS & LESSONS) ================= */}
         <section className="space-y-3">
@@ -527,22 +615,30 @@ export function CourseDetailsView({
         </section>
 
         {/* ================= COURSE REQUIREMENTS ================= */}
-        {course.requirements && course.requirements.length > 0 && (
-          <section className="space-y-3">
-            <h2 className="text-sm font-mono uppercase tracking-widest text-slate-400 flex items-center">
-              <Check size={13} className="mr-2 text-teal-400" />
-              <span>Syllabus Prerequisites & Requirements</span>
-            </h2>
-            <div className="bg-white/[0.01] border border-white/5 rounded-3xl p-5 space-y-2.5">
-              {course.requirements.map((req, i) => (
-                <div key={i} className="flex items-center space-x-2.5 text-xs text-slate-300 font-sans">
-                  <div className="w-1.5 h-1.5 rounded-full bg-teal-500" />
-                  <span>{req}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+        {(() => {
+          const reqList = Array.isArray(course.requirements)
+            ? course.requirements
+            : typeof course.requirements === 'string'
+              ? (course.requirements as string).split(',').map(s => s.trim()).filter(Boolean)
+              : [];
+          if (reqList.length === 0) return null;
+          return (
+            <section className="space-y-3">
+              <h2 className="text-sm font-mono uppercase tracking-widest text-slate-400 flex items-center">
+                <Check size={13} className="mr-2 text-teal-400" />
+                <span>Syllabus Prerequisites & Requirements</span>
+              </h2>
+              <div className="bg-white/[0.01] border border-white/5 rounded-3xl p-5 space-y-2.5">
+                {reqList.map((req, i) => (
+                  <div key={i} className="flex items-center space-x-2.5 text-xs text-slate-300 font-sans">
+                    <div className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+                    <span>{req}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })()}
 
         {/* ================= DETAILED INSTRUCTOR PROFILE ================= */}
         <section className="space-y-3">
@@ -586,7 +682,7 @@ export function CourseDetailsView({
                     <div className="flex items-center space-x-3 mt-1.5 text-[10px] font-mono text-slate-450">
                       <span>🎓 {instructor.totalCourses} Courses</span>
                       <span>👥 {instructor.totalStudents?.toLocaleString() || 0} Students</span>
-                      <span>⭐ {instructor.averageRating.toFixed(1)} Avg Rating</span>
+                      <span>⭐ {(typeof instructor.averageRating === 'number' ? instructor.averageRating : Number(instructor.averageRating) || 5.0).toFixed(1)} Avg Rating</span>
                     </div>
                   </div>
                 </div>
@@ -602,10 +698,86 @@ export function CourseDetailsView({
 
         {/* ================= STUDENT REVIEWS ================= */}
         <section className="space-y-3">
-          <h2 className="text-sm font-mono uppercase tracking-widest text-slate-400 flex items-center">
-            <Star size={13} className="mr-2 text-amber-400" fill="currentColor" />
-            <span>Student Experiences & Feedback</span>
-          </h2>
+          <div className="flex justify-between items-center pb-1">
+            <h2 className="text-sm font-mono uppercase tracking-widest text-slate-400 flex items-center">
+              <Star size={13} className="mr-2 text-amber-400" fill="currentColor" />
+              <span>Student Experiences & Feedback</span>
+            </h2>
+
+            {isEnrolled && !showReviewForm && (
+              <button
+                onClick={() => setShowReviewForm(true)}
+                className="px-3 py-1.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold text-[10px] uppercase font-mono rounded-xl transition-all cursor-pointer flex items-center space-x-1 shadow-[0_0_15px_rgba(57,255,20,0.2)]"
+              >
+                <span>+ Rate Course</span>
+              </button>
+            )}
+          </div>
+
+          {/* Form to add review */}
+          {showReviewForm && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white/[0.02] border border-[#39FF14]/30 rounded-2xl p-4 space-y-4"
+            >
+              <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                <span className="text-[10px] font-mono text-slate-300 uppercase">Write a Review & Rate</span>
+                <button 
+                  onClick={() => setShowReviewForm(false)}
+                  className="p-1 text-slate-400 hover:text-white rounded bg-white/5 cursor-pointer"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center space-x-3 text-xs font-mono">
+                  <span className="text-slate-400">Your Rating:</span>
+                  <div className="flex text-amber-400">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setUserRating(star)}
+                        className="p-1 hover:scale-115 transition-transform cursor-pointer"
+                      >
+                        <Star 
+                          size={18} 
+                          fill={star <= userRating ? 'currentColor' : 'none'} 
+                          className="text-amber-400"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-slate-300 font-bold">{userRating}.0 / 5.0</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-mono text-slate-400 block uppercase">Your Review Comment</label>
+                  <textarea
+                    rows={3}
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    placeholder="Tell us what you loved about this course, lectures, or exercises..."
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-[#39FF14] font-sans placeholder-slate-600 transition-colors"
+                    required
+                  />
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    disabled={submittingReview}
+                    onClick={handleSubmitReview}
+                    className="px-4 py-2 bg-[#39FF14] hover:bg-[#32e011] disabled:bg-slate-700 disabled:text-slate-500 text-black font-bold font-mono text-xs rounded-xl cursor-pointer transition-colors"
+                  >
+                    {submittingReview ? 'Submitting...' : 'Submit Review'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
           <div className="space-y-2.5">
             {loadingReviews ? (
@@ -640,12 +812,12 @@ export function CourseDetailsView({
                               <Star 
                                 key={i} 
                                 size={9} 
-                                fill={i < Math.floor(rev.rating) ? 'currentColor' : 'none'} 
+                                fill={i < Math.floor(typeof rev.rating === 'number' ? rev.rating : Number(rev.rating) || 5.0) ? 'currentColor' : 'none'} 
                                 className="mr-0.5" 
                               />
                             ))}
                           </div>
-                          <span className="text-[9px] text-slate-500 font-mono">{rev.rating.toFixed(1)}</span>
+                          <span className="text-[9px] text-slate-500 font-mono">{(typeof rev.rating === 'number' ? rev.rating : Number(rev.rating) || 5.0).toFixed(1)}</span>
                         </div>
                       </div>
                     </div>
@@ -775,3 +947,5 @@ export function CourseDetailsView({
     </div>
   );
 }
+
+export default CourseDetailsView;

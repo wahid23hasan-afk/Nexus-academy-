@@ -11,7 +11,8 @@ import {
   Compass, 
   Sparkles,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  ArrowLeft
 } from 'lucide-react';
 import { Certificate } from '../types/certificate';
 import { certificateService } from '../services/certificateService';
@@ -22,12 +23,14 @@ import { auth } from '../services/firebase';
 interface MyCertificatesViewProps {
   userProfile: { fullName: string; username: string; photoURL?: string } | null;
   onNavigateToDiscover: () => void;
+  onBackToProfile?: () => void;
   onShowNotification: (message: string, type: 'success' | 'error') => void;
 }
 
 export function MyCertificatesView({
   userProfile,
   onNavigateToDiscover,
+  onBackToProfile,
   onShowNotification
 }: MyCertificatesViewProps) {
   const [certificates, setCertificates] = useState<Certificate[]>([]);
@@ -95,6 +98,17 @@ export function MyCertificatesView({
   return (
     <div className="space-y-5 px-1 max-w-4xl mx-auto" id="my-certificates-ledger-view">
       
+      {/* Back to Profile / Navigation */}
+      <div className="flex items-center justify-between pb-1">
+        <button
+          onClick={() => onBackToProfile ? onBackToProfile() : onNavigateToDiscover()}
+          className="flex items-center space-x-1.5 text-xs text-slate-400 hover:text-[#39FF14] font-mono uppercase tracking-wider transition-colors cursor-pointer"
+        >
+          <ArrowLeft size={14} />
+          <span>Back to Profile</span>
+        </button>
+      </div>
+
       {/* View Title Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-900/40 p-4 border border-white/5 rounded-3xl backdrop-blur-md">
         <div className="space-y-1">

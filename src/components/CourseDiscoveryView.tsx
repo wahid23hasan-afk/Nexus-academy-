@@ -39,33 +39,41 @@ import { courseService } from '../services/courseService';
 import { progressService } from '../services/progressService';
 import { auth } from '../services/firebase';
 
-const CourseDetailsView = React.lazy(() => import('./CourseDetailsView').then(m => ({ default: m.CourseDetailsView })));
-const EnrollmentConfirmationView = React.lazy(() => import('./EnrollmentConfirmationView').then(m => ({ default: m.EnrollmentConfirmationView })));
-const PaymentView = React.lazy(() => import('./PaymentView').then(m => ({ default: m.PaymentView })));
-const MyCoursesView = React.lazy(() => import('./MyCoursesView').then(m => ({ default: m.MyCoursesView })));
-const LearningDashboardView = React.lazy(() => import('./LearningDashboardView').then(m => ({ default: m.LearningDashboardView })));
-const MyCertificatesView = React.lazy(() => import('./MyCertificatesView').then(m => ({ default: m.MyCertificatesView })));
-const NotificationCenter = React.lazy(() => import('./NotificationCenter').then(m => ({ default: m.NotificationCenter })));
-const AnnouncementBanner = React.lazy(() => import('./AnnouncementBanner').then(m => ({ default: m.AnnouncementBanner })));
-const LiveClassesView = React.lazy(() => import('./LiveClassesView').then(m => ({ default: m.LiveClassesView })));
-const CommunityView = React.lazy(() => import('./CommunityView').then(m => ({ default: m.CommunityView })));
-const FlashcardsView = React.lazy(() => import('./FlashcardsView').then(m => ({ default: m.FlashcardsView })));
-const StudyGroupView = React.lazy(() => import('./StudyGroupView').then(m => ({ default: m.StudyGroupView })));
-const CodeSandboxView = React.lazy(() => import('./CodeSandboxView').then(m => ({ default: m.CodeSandboxView })));
-const CourseReviewsModal = React.lazy(() => import('./CourseReviewsModal').then(m => ({ default: m.CourseReviewsModal })));
+import { CourseDetailsView } from './CourseDetailsView';
+import { EnrollmentConfirmationView } from './EnrollmentConfirmationView';
+import { PaymentView } from './PaymentView';
+import { MyCoursesView } from './MyCoursesView';
+import { LearningDashboardView } from './LearningDashboardView';
+import { AnnouncementBanner } from './AnnouncementBanner';
+
+import { MyCertificatesView } from './MyCertificatesView';
+import { NotificationCenter } from './NotificationCenter';
+import { LiveClassesView } from './LiveClassesView';
+import { CommunityView } from './CommunityView';
+import { FlashcardsView } from './FlashcardsView';
+import { StudyGroupView } from './StudyGroupView';
+import { CourseReviewsModal } from './CourseReviewsModal';
 import { AiChatView } from './AiChatView';
-const ProfileView = React.lazy(() => import('./ProfileView').then(m => ({ default: m.ProfileView })));
-const GamificationSummary = React.lazy(() => import('./GamificationDashboard').then(m => ({ default: m.GamificationSummary })));
-const RewardsView = React.lazy(() => import('./RewardsView').then(m => ({ default: m.RewardsView })));
-const AccountDetailsView = React.lazy(() => import('./AccountDetailsView').then(m => ({ default: m.AccountDetailsView })));
-const PrivacySecurityView = React.lazy(() => import('./PrivacySecurityView').then(m => ({ default: m.PrivacySecurityView })));
-const HelpSupportView = React.lazy(() => import('./HelpSupportView').then(m => ({ default: m.HelpSupportView })));
-const AdminPanelModal = React.lazy(() => import('./AdminPanelModal').then(m => ({ default: m.AdminPanelModal })));
+import { ProfileView } from './ProfileView';
+import { GamificationSummary } from './GamificationDashboard';
+import { RewardsView } from './RewardsView';
+import { AccountDetailsView } from './AccountDetailsView';
+import { PrivacySecurityView } from './PrivacySecurityView';
+import { HelpSupportView } from './HelpSupportView';
+import { AdminPanelModal } from './AdminPanelModal';
+import { CodeSandboxView } from './CodeSandboxView';
+import { PaymentHistoryView } from './PaymentHistoryView';
 
 import { notificationService } from '../services/notificationService';
-import { Notification as DBNotification } from '../types/notification';
+import { Notification as DBNotification, Announcement } from '../types/notification';
 import { AiAssistantFAB } from './AiAssistantFAB';
 import { gamificationService } from '../services/gamificationService';
+
+const TabFallback = () => (
+  <div className="flex-1 flex flex-col items-center justify-center p-12">
+    <div className="w-6 h-6 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin mb-2" />
+  </div>
+);
 
 interface CourseDiscoveryViewProps {
   userProfile: { fullName: string; username: string; photoURL?: string } | null;
@@ -152,7 +160,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
   const [selectedDetailsCourse, setSelectedDetailsCourse] = useState<Course | null>(null);
   
   // Tab Navigation & Active Learning states
-  const [activeTab, setActiveTab] = useState<'discover' | 'my-courses' | 'certificates' | 'live-classes' | 'community' | 'flashcards' | 'study-group' | 'sandbox' | 'profile' | 'account-details' | 'privacy-security' | 'help-support'>('discover');
+  const [activeTab, setActiveTab] = useState<'discover' | 'my-courses' | 'certificates' | 'live-classes' | 'community' | 'flashcards' | 'study-group' | 'sandbox' | 'profile' | 'payment-history' | 'account-details' | 'privacy-security' | 'help-support'>('discover');
   const [activeLearningCourse, setActiveLearningCourse] = useState<Course | null>(null);
   
   // Payment Module states
@@ -164,6 +172,10 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
   // Notification states
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [dbNotifications, setDbNotifications] = useState<DBNotification[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const seenNotifIdsRef = useRef<Set<string> | null>(null);
+  const lastUserIdRef = useRef<string | null>(null);
+  const sessionStartTimeRef = useRef<number>(Date.now());
 
   // Pagination/Infinite Scroll State
   const [visibleCount, setVisibleCount] = useState<number>(4);
@@ -231,39 +243,100 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           .filter(p => p.status === 'approved' || p.status === 'success' || p.status === 'active')
           .map(p => p.courseId);
 
-        const pendingPurchaseIds = userPurchases
-          .filter(p => p.status === 'pending')
-          .map(p => p.courseId);
-
-        setPendingPurchaseCourseIds(pendingPurchaseIds);
-
         const progressIds = (relations || []).map(r => r.courseId);
         const combinedApproved = Array.from(new Set([...approvedPurchaseIds, ...progressIds]));
 
+        const pendingPurchaseIds = userPurchases
+          .filter(p => p.status === 'pending' && !combinedApproved.includes(p.courseId))
+          .map(p => p.courseId);
+
+        setPendingPurchaseCourseIds(pendingPurchaseIds);
         setEnrolledIds(combinedApproved);
         localStorage.setItem('nexus_enrollments', JSON.stringify(combinedApproved));
       } catch (err) {
         console.warn('Silent enrollment sync failed:', err);
       }
     };
+
     syncEnrollments();
+
+    const handlePurchaseUpdate = () => {
+      syncEnrollments();
+    };
+
+    window.addEventListener('nexus_purchases_updated', handlePurchaseUpdate);
+    return () => {
+      window.removeEventListener('nexus_purchases_updated', handlePurchaseUpdate);
+    };
   }, [userProfile]);
 
-  // Listen to dynamic notifications from Firestore in real-time
+  // Listen to dynamic notifications and announcements from Firestore in real-time using onSnapshot
   useEffect(() => {
-    const uId = auth.currentUser?.uid;
-    if (!uId) {
-      setDbNotifications([]);
-      return;
-    }
+    let unsubscribeNotif: (() => void) | undefined;
+    let unsubscribeAnn: (() => void) | undefined;
 
-    const uEmail = auth.currentUser?.email || undefined;
-    const unsubscribe = notificationService.listenToNotifications(uId, (list) => {
-      setDbNotifications(list);
-    }, uEmail);
+    const setupListeners = () => {
+      const uId = auth.currentUser?.uid || userProfile?.username || 'guest_user';
+      const uEmail = auth.currentUser?.email || userProfile?.username || undefined;
+      const uName = userProfile?.fullName || auth.currentUser?.displayName || undefined;
 
-    return () => unsubscribe();
-  }, [userProfile]);
+      // Reset seen notifications cache if the user ID switches
+      if (lastUserIdRef.current !== uId) {
+        lastUserIdRef.current = uId;
+        seenNotifIdsRef.current = null;
+        sessionStartTimeRef.current = Date.now();
+      }
+
+      if (unsubscribeNotif) unsubscribeNotif();
+      if (unsubscribeAnn) unsubscribeAnn();
+
+      // Real-time notifications listener
+      unsubscribeNotif = notificationService.listenToNotifications(uId, (list) => {
+        setDbNotifications(list);
+
+        // Live Toast popups when a new broadcast or direct notification arrives while student is active
+        if (seenNotifIdsRef.current === null) {
+          // Initialize seenNotifIdsRef with all pre-existing notifications on initial load to avoid toast storm on page refresh
+          seenNotifIdsRef.current = new Set(list.map(n => n.notificationId));
+        } else {
+          // Find any notification that is not in the seen set and is unread, and was created after the session/user-login started
+          const newItems = list.filter(n => {
+            const isUnseen = !seenNotifIdsRef.current!.has(n.notificationId);
+            const isUnread = n.unread;
+            const createdTime = new Date(n.createdAt).getTime();
+            // Allow a small 5 second clock skew buffer
+            const isPostStart = createdTime > (sessionStartTimeRef.current - 5000);
+            return isUnseen && isUnread && isPostStart;
+          });
+
+          newItems.forEach(n => {
+            onShowNotification(`📢 ${n.title}: ${n.message}`, 'success');
+            seenNotifIdsRef.current!.add(n.notificationId);
+          });
+          
+          // Ensure all IDs from the list are in the seen set
+          list.forEach(n => seenNotifIdsRef.current!.add(n.notificationId));
+        }
+      }, uEmail, uName);
+
+      // Real-time announcements listener
+      unsubscribeAnn = notificationService.listenToAnnouncements((annList) => {
+        setAnnouncements(annList);
+      });
+    };
+
+    setupListeners();
+
+    const authUnsub = auth.onAuthStateChanged(() => {
+      setupListeners();
+    });
+
+    return () => {
+      if (unsubscribeNotif) unsubscribeNotif();
+      if (unsubscribeAnn) unsubscribeAnn();
+      authUnsub();
+    };
+  }, [userProfile, onShowNotification]);
 
   // Fetch from Firestore database
   const initializeData = async (isRefreshed = false) => {
@@ -579,7 +652,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
     <div className="flex-1 flex flex-col justify-between py-1 px-1 text-slate-100 max-w-lg mx-auto w-full relative">
       
       {/* ================= HEADER ================= */}
-      <header className="flex items-center justify-between py-3 px-1 border-b border-white/5 backdrop-blur-md sticky top-0 z-40 bg-[#0a0f1d]/90">
+      <header className="flex items-center justify-between py-3 px-1 border-b border-white/5 relative z-10 bg-[#0a0f1d]">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-[#39FF14]/30 overflow-hidden flex items-center justify-center shadow-[0_0_12px_rgba(57,255,20,0.15)]">
             {userProfile?.photoURL ? (
@@ -595,10 +668,20 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           </div>
           <div>
             <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">{getGreeting()}</p>
-            <h1 className="text-sm font-sans font-semibold text-white tracking-tight flex items-center space-x-1">
-              <span>{userProfile?.fullName || 'Distinguished Scholar'}</span>
-              <span className="text-xs">👋</span>
-            </h1>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-sm font-sans font-semibold text-white tracking-tight flex items-center space-x-1">
+                <span>{userProfile?.fullName || 'Distinguished Scholar'}</span>
+                <span className="text-xs">👋</span>
+              </h1>
+              <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border flex items-center space-x-1 transition-all ${
+                pendingPurchaseCourseIds.length > 0 && enrolledIds.length === 0
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.2)] animate-pulse'
+                  : 'bg-[#39FF14]/15 text-[#39FF14] border-[#39FF14]/30 shadow-[0_0_8px_rgba(57,255,20,0.15)]'
+              }`}>
+                {pendingPurchaseCourseIds.length > 0 && enrolledIds.length === 0 ? <Clock size={10} /> : <ShieldCheck size={10} />}
+                <span>{pendingPurchaseCourseIds.length > 0 && enrolledIds.length === 0 ? 'Pending' : 'Approved'}</span>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -620,11 +703,12 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                 ? 'bg-[#39FF14]/10 border-[#39FF14]/40 text-[#39FF14]' 
                 : 'bg-white/[0.02] border-white/10 text-slate-300 hover:bg-white/[0.05]'
             }`}
+            title={unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}` : 'Notifications'}
           >
             <Bell size={16} />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[8px] font-mono font-bold text-white shadow-lg animate-pulse">
-                {unreadCount}
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 rounded-full flex items-center justify-center text-[9px] font-mono font-bold text-white shadow-lg shadow-red-500/50 animate-pulse border border-slate-900">
+                {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </button>
@@ -641,7 +725,6 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       </header>
 
       {/* Premium Announcement Auto-scrolling banner */}
-      <React.Suspense fallback={<div className="p-4 text-center text-xs font-mono text-emerald-400/50 animate-pulse">Initializing components...</div>}>
       <AnnouncementBanner />
 
       {/* Quick Study Hub Navigation Bar */}
@@ -698,6 +781,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         <MyCertificatesView
           userProfile={userProfile}
           onNavigateToDiscover={() => setActiveTab('discover')}
+          onBackToProfile={() => setActiveTab('profile')}
           onShowNotification={onShowNotification}
         />
       ) : activeTab === 'live-classes' ? (
@@ -710,6 +794,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       ) : activeTab === 'community' ? (
         <CommunityView
           userProfile={userProfile}
+          onBackToProfile={() => setActiveTab('profile')}
           onShowNotification={onShowNotification}
         />
       ) : activeTab === 'flashcards' ? (
@@ -732,6 +817,23 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           onShowNotification={onShowNotification}
           onOpenRewards={() => setIsRewardsOpen(true)}
           onNavigate={(route: any) => setActiveTab(route)}
+        />
+      ) : activeTab === 'payment-history' ? (
+        <PaymentHistoryView
+          onBack={() => setActiveTab('profile')}
+          userProfile={userProfile}
+          onShowNotification={onShowNotification}
+          onRetryPayment={(courseId) => {
+            const course = courses.find(c => c.courseId === courseId);
+            if (course) {
+              handleEnrollClick(course);
+            } else {
+              courseService.getCourses().then(allCourses => {
+                const found = allCourses.find(c => c.courseId === courseId);
+                if (found) handleEnrollClick(found);
+              });
+            }
+          }}
         />
       ) : activeTab === 'account-details' ? (
         <AccountDetailsView onBack={() => setActiveTab('profile')} userProfile={userProfile} />
@@ -1284,7 +1386,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                         <span>👨‍🏫 {course.instructor}</span>
                         <span className="flex items-center text-amber-400">
                           <Star size={10} fill="currentColor" className="mr-0.5" />
-                          <strong>{course.rating.toFixed(1)}</strong>
+                          <strong>{(typeof course.rating === 'number' ? course.rating : Number(course.rating) || 5.0).toFixed(1)}</strong>
                         </span>
                       </div>
 
@@ -1409,7 +1511,6 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       </main>
         </>
       )}
-      </React.Suspense>
 
       {/* ================= PERSISTENT BOTTOM NAVIGATION BAR ================= */}
       <div className="sticky bottom-0 z-40 pt-4 pb-2 bg-gradient-to-t from-[#0a0f1d] via-[#0a0f1d]/95 to-transparent">
@@ -1447,19 +1548,6 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
             <span className="text-[9px] font-mono font-bold tracking-wider uppercase">My Courses</span>
           </button>
 
-          {/* Certificates Tab */}
-          <button
-            onClick={() => setActiveTab('certificates')}
-            className={`flex-1 py-2 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
-              activeTab === 'certificates'
-                ? 'bg-white/5 border border-[#39FF14]/30 text-[#39FF14]'
-                : 'text-slate-400 hover:text-white border border-transparent'
-            }`}
-          >
-            <Award size={18} className={activeTab === 'certificates' ? 'text-[#39FF14] drop-shadow-[0_0_4px_rgba(57,255,20,0.5)]' : ''} />
-            <span className="text-[9px] font-mono font-bold tracking-wider uppercase">Certificates</span>
-          </button>
-
           {/* Live Classes Tab */}
           <button
             onClick={() => setActiveTab('live-classes')}
@@ -1475,25 +1563,12 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
             </div>
             <span className="text-[9px] font-mono font-bold tracking-wider uppercase">Live</span>
           </button>
-
-          {/* Community Tab */}
-          <button
-            onClick={() => setActiveTab('community')}
-            className={`flex-1 py-2 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
-              activeTab === 'community'
-                ? 'bg-white/5 border border-[#39FF14]/30 text-[#39FF14]'
-                : 'text-slate-400 hover:text-white border border-transparent'
-            }`}
-          >
-            <MessageSquare size={18} className={activeTab === 'community' ? 'text-[#39FF14] drop-shadow-[0_0_4px_rgba(57,255,20,0.5)]' : ''} />
-            <span className="text-[9px] font-mono font-bold tracking-wider uppercase">Community</span>
-          </button>
           
           {/* Profile Tab */}
           <button
             onClick={() => setActiveTab('profile')}
             className={`flex-1 py-2 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
-              activeTab === 'profile'
+              activeTab === 'profile' || activeTab === 'certificates' || activeTab === 'community' || activeTab === 'account-details' || activeTab === 'privacy-security' || activeTab === 'help-support'
                 ? 'bg-white/5 border border-[#39FF14]/30 text-[#39FF14]'
                 : 'text-slate-400 hover:text-white border border-transparent'
             }`}
@@ -1511,16 +1586,16 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       </footer>
 
       {/* Notification and Preferences Sidebar Drawer */}
-      <React.Suspense fallback={null}>
       <NotificationCenter
         isOpen={showNotifications}
         onClose={() => setShowNotifications(false)}
         onShowNotification={onShowNotification}
         onNavigateToTab={(tab) => setActiveTab(tab)}
         onSelectCourseById={handleSelectCourseById}
-        userId={auth.currentUser?.uid || ''}
+        userId={auth.currentUser?.uid || userProfile?.username || 'guest_user'}
+        userProfile={userProfile}
+        notifications={dbNotifications}
       />
-      </React.Suspense>
 
       {/* AI Study Assistant */}
       <AiAssistantFAB 
@@ -1530,31 +1605,27 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       
       <AnimatePresence>
         {isAiChatOpen && (
-          <React.Suspense fallback={null}>
           <AiChatView 
             onClose={() => setIsAiChatOpen(false)} 
             userProfile={userProfile}
             onShowNotification={onShowNotification}
           />
-          </React.Suspense>
         )}
         
         {isRewardsOpen && (
-          <React.Suspense fallback={null}>
           <RewardsView onClose={() => setIsRewardsOpen(false)} />
-          </React.Suspense>
         )}
 
         {isAdminOpen && (
-          <React.Suspense fallback={null}>
           <AdminPanelModal
             isOpen={isAdminOpen}
             onClose={() => setIsAdminOpen(false)}
             onShowNotification={onShowNotification}
           />
-          </React.Suspense>
         )}
       </AnimatePresence>
     </div>
   );
 }
+
+export default CourseDiscoveryView;

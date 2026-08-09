@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, Send, Bot, User, Trash2, RotateCw, Copy, Check, MessageSquare, 
-  Sparkles, History, Mic, Image as ImageIcon, PlusCircle, Maximize2, Minimize2, ChevronLeft, Camera
+  Sparkles, History, Mic, Image as ImageIcon, PlusCircle, Maximize2, Minimize2, ChevronLeft, Camera, ArrowLeft
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -38,24 +38,6 @@ interface ChatSession {
 }
 
 export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatViewProps) {
-  
-  // Handling Android Back Button / App Back Button
-  useEffect(() => {
-    const handlePopState = (e) => {
-      onClose();
-    };
-    
-    // Push a dummy state so when back button is pressed, it just pops this state and triggers popstate
-    window.history.pushState({ modal: 'aichat' }, '');
-    window.addEventListener('popstate', handlePopState);
-    
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-      if (window.history.state && window.history.state.modal === 'aichat') {
-        window.history.back();
-      }
-    };
-  }, [onClose]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
@@ -387,28 +369,28 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
 
   return (
     <motion.div 
-      initial={{ opacity: 0, y: 50, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 50, scale: 0.95 }}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-md`}
+      initial={{ opacity: 0, scale: 0.95, y: 15 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95, y: 15 }}
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md"
     >
-      <div className={`w-full ${isFullscreen ? 'h-full max-w-7xl' : 'h-[85vh] max-w-4xl'} bg-[#0a0f1d] border border-[#39FF14]/20 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(57,255,20,0.1)] flex transition-all duration-300 relative`}>
+      <div className="w-full max-w-3xl h-[85vh] sm:h-[80vh] max-h-[720px] bg-[#0a0f1d] border border-[#39FF14]/30 rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_15px_50px_rgba(0,0,0,0.9)] flex flex-col md:flex-row transition-all duration-300 relative">
         
         {/* Sidebar History */}
-        <div className={`w-64 bg-slate-950/80 border-r border-white/10 flex flex-col transition-all duration-300 absolute md:relative z-20 h-full ${showHistory ? 'left-0' : '-left-full md:left-0'}`}>
-          <div className="p-4 border-b border-white/10 flex justify-between items-center">
+        <div className={`w-64 bg-slate-950/95 border-r border-white/10 flex flex-col transition-all duration-300 absolute md:relative z-20 h-full ${showHistory ? 'left-0' : '-left-full md:left-0'}`}>
+          <div className="p-4 border-b border-white/10 flex justify-between items-center bg-slate-950">
             <h3 className="text-sm font-bold text-white flex items-center space-x-2">
               <History size={16} className="text-[#39FF14]" />
               <span>Chat History</span>
             </h3>
-            <button onClick={() => setShowHistory(false)} className="md:hidden text-slate-400 hover:text-white">
+            <button onClick={() => setShowHistory(false)} className="md:hidden text-slate-400 hover:text-white cursor-pointer">
               <X size={16} />
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1 no-scrollbar">
             <button 
               onClick={createNewSession}
-              className="w-full flex items-center space-x-2 p-3 rounded-xl bg-[#39FF14]/10 text-[#39FF14] hover:bg-[#39FF14]/20 border border-[#39FF14]/20 transition-all font-semibold text-xs mb-4"
+              className="w-full flex items-center space-x-2 p-3 rounded-xl bg-[#39FF14]/10 text-[#39FF14] hover:bg-[#39FF14]/20 border border-[#39FF14]/20 transition-all font-semibold text-xs mb-4 cursor-pointer"
             >
               <PlusCircle size={14} />
               <span>New Conversation</span>
@@ -417,7 +399,7 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
               <button
                 key={session.id}
                 onClick={() => loadSession(session.id)}
-                className={`w-full text-left p-3 rounded-xl text-xs font-sans transition-all truncate flex items-center space-x-2 ${currentSessionId === session.id ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
+                className={`w-full text-left p-3 rounded-xl text-xs font-sans transition-all truncate flex items-center space-x-2 cursor-pointer ${currentSessionId === session.id ? 'bg-white/10 text-white font-bold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
               >
                 <MessageSquare size={12} className="shrink-0" />
                 <span className="truncate">{session.title}</span>
@@ -427,42 +409,65 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
         </div>
 
         {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col h-full bg-[#0a0f1d]/90 relative z-10">
+        <div className="flex-1 flex flex-col h-full bg-[#0a0f1d] relative z-10 overflow-hidden">
           {/* Header */}
-          <div className="h-16 border-b border-white/10 flex items-center justify-between px-4 bg-slate-950/50 backdrop-blur-md">
-            <div className="flex items-center space-x-3">
+          <div className="h-16 border-b border-white/10 flex items-center justify-between px-3 sm:px-4 bg-slate-950 flex-shrink-0 gap-2">
+            <div className="flex items-center space-x-2 shrink-0">
+              {/* Back Button */}
               <button 
                 onClick={onClose}
-                className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-slate-300 transition-all"
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-white/10 hover:bg-[#39FF14]/20 hover:text-[#39FF14] text-slate-100 rounded-xl font-bold text-xs transition-all border border-white/15 hover:border-[#39FF14]/40 cursor-pointer shadow-sm active:scale-95 shrink-0"
+                title="Go Back"
               >
-                <ChevronLeft size={16} />
+                <ArrowLeft size={16} />
+                <span className="font-sans font-bold">Back</span>
               </button>
+
+              {/* History button for mobile */}
               <button 
                 onClick={() => setShowHistory(!showHistory)}
-                className="md:hidden p-2 bg-white/5 rounded-lg text-slate-300"
+                className="md:hidden p-2 bg-white/5 rounded-xl text-slate-300 hover:text-white shrink-0 border border-white/10"
+                title="History"
               >
                 <History size={16} />
               </button>
-              <div className="w-8 h-8 rounded-full bg-[#39FF14]/10 border border-[#39FF14]/30 flex items-center justify-center">
-                <Sparkles size={16} className="text-[#39FF14]" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-                  <span>Nexus AI Assistant</span>
-                  <span className="text-[9px] bg-[#39FF14]/20 text-[#39FF14] px-1.5 py-0.5 rounded uppercase font-mono font-bold tracking-wider">Premium</span>
-                </h2>
-                <div className="flex items-center space-x-2 mt-0.5">
-                  <span className="w-1.5 h-1.5 bg-[#39FF14] rounded-full animate-pulse"></span>
-                  <span className="text-[10px] text-slate-400 font-mono">System Online</span>
+
+              {/* AI Badge & Title */}
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-xl bg-[#39FF14]/15 border border-[#39FF14]/40 flex items-center justify-center shrink-0">
+                  <Sparkles size={16} className="text-[#39FF14]" />
+                </div>
+                <div className="hidden sm:block">
+                  <h2 className="text-xs font-bold text-white flex items-center space-x-1.5">
+                    <span className="truncate max-w-[130px] lg:max-w-none">Nexus AI Control</span>
+                    <span className="text-[8px] bg-[#39FF14]/20 text-[#39FF14] px-1.5 py-0.5 rounded uppercase font-mono font-bold tracking-wider">Active</span>
+                  </h2>
+                  <div className="flex items-center space-x-1.5 mt-0.5">
+                    <span className="w-1.5 h-1.5 bg-[#39FF14] rounded-full animate-pulse"></span>
+                    <span className="text-[9px] text-slate-400 font-mono">System Execution</span>
+                  </div>
                 </div>
               </div>
+
+              {/* New Chat Tab (+) Button in Header */}
+              <button
+                onClick={() => {
+                  createNewSession();
+                  onShowNotification('New AI Chat session opened', 'success');
+                }}
+                className="flex items-center space-x-1 px-2.5 py-1.5 bg-[#39FF14]/20 hover:bg-[#39FF14]/30 text-[#39FF14] rounded-xl font-bold text-xs transition-all border border-[#39FF14]/40 cursor-pointer shadow-sm active:scale-95 shrink-0"
+                title="Open New AI Chat Tab"
+              >
+                <PlusCircle size={16} />
+                <span className="font-sans font-bold">New Chat</span>
+              </button>
             </div>
             
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 shrink-0">
               <select 
                 value={selectedCourseId}
                 onChange={(e) => setSelectedCourseId(e.target.value)}
-                className="hidden sm:block bg-slate-900 border border-white/10 text-slate-300 text-[10px] rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#39FF14]/50 max-w-[150px] truncate"
+                className="bg-slate-900 border border-white/10 text-slate-300 text-[10px] sm:text-xs rounded-xl px-2 py-1.5 focus:outline-none focus:border-[#39FF14]/50 max-w-[100px] sm:max-w-[150px] truncate cursor-pointer"
               >
                 <option value="all">General Context</option>
                 {enrolledCourses.map(c => (
@@ -470,14 +475,9 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
                 ))}
               </select>
               <button 
-                onClick={() => setIsFullscreen(!isFullscreen)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-              >
-                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-              </button>
-              <button 
                 onClick={onClose}
-                className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 rounded-lg transition-all"
+                className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 rounded-xl transition-all cursor-pointer border border-red-500/20"
+                title="Close AI Assistant"
               >
                 <X size={18} />
               </button>
@@ -643,7 +643,7 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
                     handleSend();
                   }
                 }}
-                placeholder="Ask your AI Assistant anything..."
+                placeholder="Tell AI to perform an action..."
                 className="flex-1 bg-transparent border-none focus:outline-none text-sm text-white resize-none py-3 px-2 max-h-32 placeholder-slate-500 font-sans"
                 rows={1}
                 style={{ minHeight: '44px' }}

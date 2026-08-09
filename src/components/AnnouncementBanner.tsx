@@ -3,11 +3,35 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Megaphone, X, AlertTriangle, Sparkles, ChevronRight } from 'lucide-react';
 import { Announcement } from '../types/notification';
 import { notificationService } from '../services/notificationService';
+import { auth } from '../services/firebase';
 
 export function AnnouncementBanner() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+
+  // Robust date formatting function that handles ISO string, millisecond number, and Firestore Timestamps
+  const formatAnnouncementDate = (createdAt: any) => {
+    if (!createdAt) return '';
+    try {
+      if (typeof createdAt === 'string') {
+        return new Date(createdAt).toLocaleDateString();
+      }
+      if (typeof createdAt === 'number') {
+        return new Date(createdAt).toLocaleDateString();
+      }
+      if (createdAt && typeof createdAt.toDate === 'function') {
+        return createdAt.toDate().toLocaleDateString();
+      }
+      if (createdAt && typeof createdAt.seconds === 'number') {
+        return new Date(createdAt.seconds * 1000).toLocaleDateString();
+      }
+      return new Date(createdAt).toLocaleDateString();
+    } catch (e) {
+      return '';
+    }
+  };
 
   useEffect(() => {
     // Read dismissed announcements from localStorage
@@ -25,7 +49,22 @@ export function AnnouncementBanner() {
       setAnnouncements(list);
     });
 
-    return () => unsub();
+    // Listen to auth state to fetch user-specific dismissed announcements from Firestore
+    const unsubAuth = auth.onAuthStateChanged((user) => {
+      if (user) {
+        notificationService.getDismissedAnnouncements(user.uid).then((firebaseDismissed) => {
+          setDismissedIds((prev) => {
+            const merged = Array.from(new Set([...prev, ...firebaseDismissed]));
+            return merged;
+          });
+        });
+      }
+    });
+
+    return () => {
+      unsub();
+      unsubAuth();
+    };
   }, []);
 
   // Filter out dismissed announcements
@@ -34,19 +73,36 @@ export function AnnouncementBanner() {
   );
 
   useEffect(() => {
+    setIsExpanded(false);
+  }, [currentIndex]);
+
+  useEffect(() => {
     if (activeAnnouncements.length <= 1) return;
 
     const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % activeAnnouncements.length);
-    }, 6000); // Rotate every 6 seconds
+      if (!isExpanded) {
+        setCurrentIndex((prev) => (prev + 1) % activeAnnouncements.length);
+      }
+    }, 6000); // Rotate every 6 seconds, pause rotating if user expanded it
 
     return () => clearInterval(timer);
-  }, [activeAnnouncements.length]);
+  }, [activeAnnouncements.length, isExpanded]);
 
-  const handleDismiss = (id: string) => {
+  const handleDismiss = async (id: string) => {
     const updated = [...dismissedIds, id];
     setDismissedIds(updated);
     localStorage.setItem('nexus_dismissed_announcements', JSON.stringify(updated));
+
+    // Persist to Firestore if user is authenticated
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        await notificationService.dismissAnnouncement(currentUser.uid, id);
+      } catch (e) {
+        console.warn('Failed to persist dismissed announcement to Firestore:', e);
+      }
+    }
+
     if (currentIndex >= activeAnnouncements.length - 1) {
       setCurrentIndex(0);
     }
@@ -93,25 +149,28 @@ export function AnnouncementBanner() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
           transition={{ duration: 0.3 }}
-          className={`flex items-center justify-between border rounded-2xl p-3 md:p-3.5 backdrop-blur-xl ${style.bg} relative overflow-hidden shadow-lg`}
+          className={`flex items-start justify-between border rounded-2xl p-3 md:p-3.5 backdrop-blur-xl ${style.bg} relative overflow-hidden shadow-lg transition-all duration-300`}
         >
           {/* Subtle light bar for emergency notices */}
           {current.priority === 'emergency' && (
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-red-500 via-amber-500 to-red-500 animate-pulse" />
           )}
 
-          <div className="flex items-start space-x-3 pr-4 flex-1">
+          <div className="flex items-start space-x-3 pr-2 flex-1 min-w-0">
             <div className="mt-0.5 shrink-0 p-1 bg-white/5 rounded-lg border border-white/10 flex items-center justify-center">
               {style.icon}
             </div>
 
-            <div className="space-y-0.5 flex-1 min-w-0">
+            <div 
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="space-y-1 flex-1 min-w-0 cursor-pointer select-none"
+            >
               <div className="flex items-center space-x-2">
                 <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider ${style.badge}`}>
                   {current.priority}
                 </span>
                 <span className="text-[9px] font-mono text-slate-400">
-                  {new Date(current.createdAt).toLocaleDateString()}
+                  {formatAnnouncementDate(current.createdAt)}
                 </span>
                 {activeAnnouncements.length > 1 && (
                   <span className="text-[8px] font-mono text-slate-500">
@@ -119,22 +178,28 @@ export function AnnouncementBanner() {
                   </span>
                 )}
               </div>
-              <h4 className={`text-[11px] leading-tight truncate ${style.titleStyle}`}>
+              
+              <h4 className={`text-xs leading-tight font-semibold ${isExpanded ? 'whitespace-normal break-words' : 'truncate'} ${style.titleStyle}`}>
                 {current.title}
               </h4>
-              <p className="text-[10px] text-slate-300 leading-normal font-sans line-clamp-2">
+              
+              <p className={`text-[11px] text-slate-200 leading-relaxed font-sans break-words ${isExpanded ? 'whitespace-normal' : 'line-clamp-2'}`}>
                 {current.message}
               </p>
+              
+              <div className="flex items-center space-x-1 text-[9px] font-mono text-[#39FF14] hover:underline mt-1 pt-0.5">
+                <span>{isExpanded ? '📖 Collapse full message' : '📖 Click to read full message...'}</span>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center space-x-1 shrink-0">
+          <div className="flex items-center space-x-1 shrink-0 mt-0.5 ml-1">
             {current.link && (
               <a
                 href={current.link}
                 target="_blank"
                 rel="noreferrer"
-                className="p-1 bg-white/5 border border-white/5 text-slate-400 hover:text-white rounded-lg transition-colors"
+                className="p-1.5 bg-white/5 border border-white/5 text-slate-400 hover:text-white rounded-lg transition-colors"
                 title="Learn more"
               >
                 <ChevronRight size={13} />

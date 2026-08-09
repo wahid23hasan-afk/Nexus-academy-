@@ -238,24 +238,24 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
       <div>
         <button 
           onClick={() => onNavigate('welcome')}
-          className="flex items-center space-x-1 text-slate-400 hover:text-white transition-colors py-2 group cursor-pointer"
+          className="inline-flex items-center space-x-1.5 text-slate-300 hover:text-white transition-colors py-2.5 px-3 -ml-3 rounded-xl hover:bg-white/5 active:bg-white/10 min-h-[44px] group cursor-pointer"
         >
-          <ChevronLeft size={16} className="group-hover:-translate-x-0.5 transition-transform" />
-          <span className="text-xs font-mono">Back to welcome</span>
+          <ChevronLeft size={18} className="group-hover:-translate-x-0.5 transition-transform text-[#39FF14]" />
+          <span className="text-xs font-mono font-medium">Back to welcome</span>
         </button>
 
-        <div className="mt-4">
-          <h2 className="text-2xl font-display font-semibold text-white tracking-tight">
+        <div className="mt-3">
+          <h2 className="text-2xl sm:text-3xl font-display font-semibold text-white tracking-tight">
             Create Account
           </h2>
-          <p className="text-xs text-slate-450 mt-0.5">
+          <p className="text-xs text-slate-400 mt-1 leading-relaxed">
             Join Nexus Academy to start learning from industry veterans
           </p>
         </div>
       </div>
 
       {/* Register Form Scroll Area */}
-      <form onSubmit={handleSubmit} className="flex-1 my-4 space-y-4 pr-1 scrollbar-thin">
+      <form onSubmit={handleSubmit} className="flex-1 my-3 space-y-3.5 pr-1 scrollbar-thin">
         
         {/* Error Notification Alert */}
         <AnimatePresence>
@@ -264,7 +264,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               initial={{ opacity: 0, height: 0, scale: 0.95 }}
               animate={{ opacity: 1, height: 'auto', scale: 1 }}
               exit={{ opacity: 0, height: 0, scale: 0.95 }}
-              className="bg-red-500/10 border-red-500/20 border rounded-2xl p-4 overflow-hidden mb-4"
+              className="bg-red-500/10 border-red-500/20 border rounded-2xl p-4 overflow-hidden mb-3"
             >
               <div className="flex items-start space-x-3">
                 <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={18} />
@@ -279,13 +279,17 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         </AnimatePresence>
 
         {/* Full Name Input */}
-        <div className="space-y-1">
-          <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block ml-1">
+        <motion.div 
+          animate={errors.fullName ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
+          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          className="space-y-1.5"
+        >
+          <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block ml-1">
             Full Legal Name
           </label>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-              <UserIcon size={16} />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <UserIcon size={18} />
             </span>
             <input
               type="text"
@@ -297,32 +301,36 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               }}
               placeholder="e.g. John Doe"
               className={`
-                w-full pl-11 pr-4 py-2.5 bg-white/[0.01] border rounded-xl text-sm text-slate-200
-                placeholder-slate-550 focus:outline-none transition-all duration-300 font-sans
-                ${errors.fullName ? 'border-red-500/40 focus:border-red-500 bg-red-500/[0.005]' : 'border-white/10 focus:border-[#39FF14]/40'}
+                w-full pl-12 pr-4 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
+                placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
+                ${errors.fullName ? 'border-red-500/40 focus:border-red-500 bg-red-500/[0.005]' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
               `}
             />
           </div>
           {errors.fullName && (
             <p className="text-xs text-red-400 ml-1">{errors.fullName}</p>
           )}
-        </div>
+        </motion.div>
 
         {/* Username Input with dynamic status indicator */}
-        <div className="space-y-1">
+        <motion.div 
+          animate={(errors.username || (usernameValid.checked && !usernameValid.valid)) ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
+          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          className="space-y-1.5"
+        >
           <div className="flex justify-between items-center ml-1">
-            <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+            <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
               Username
             </label>
             {usernameValid.checked && (
-              <span className={`text-[10px] font-mono uppercase tracking-wider ${usernameValid.valid ? 'text-[#39FF14]' : 'text-red-450'}`}>
+              <span className={`text-[10px] font-mono uppercase tracking-wider ${usernameValid.valid ? 'text-[#39FF14]' : 'text-red-400'}`}>
                 {usernameValid.message}
               </span>
             )}
           </div>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-              <span className="text-xs font-mono select-none">@</span>
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <span className="text-sm font-mono select-none">@</span>
             </span>
             <input
               id="reg-username-input"
@@ -335,18 +343,22 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               }}
               placeholder="johndoe_99"
               className={`
-                w-full pl-11 pr-4 py-2.5 bg-white/[0.01] border rounded-xl text-sm text-slate-200
-                placeholder-slate-550 focus:outline-none transition-all duration-300 font-sans
-                ${errors.username || (usernameValid.checked && !usernameValid.valid) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/40'}
+                w-full pl-12 pr-4 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
+                placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
+                ${errors.username || (usernameValid.checked && !usernameValid.valid) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
               `}
             />
           </div>
-        </div>
+        </motion.div>
 
         {/* Email Address with dynamic uniqueness indicator */}
-        <div className="space-y-1">
+        <motion.div 
+          animate={(errors.email || (emailValid.checked && !emailValid.valid)) ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
+          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          className="space-y-1.5"
+        >
           <div className="flex justify-between items-center ml-1">
-            <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+            <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
               Email Address
             </label>
             {!errors.email && emailValid.checked && (
@@ -356,8 +368,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             )}
           </div>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-              <Mail size={15} />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <Mail size={18} />
             </span>
             <input
               id="reg-email-input"
@@ -370,22 +382,26 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               }}
               placeholder="john@example.com"
               className={`
-                w-full pl-11 pr-4 py-2.5 bg-white/[0.01] border rounded-xl text-sm text-slate-200
-                placeholder-slate-550 focus:outline-none transition-all duration-300 font-sans
-                ${errors.email || (emailValid.checked && !emailValid.valid) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/40'}
+                w-full pl-12 pr-4 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
+                placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
+                ${errors.email || (emailValid.checked && !emailValid.valid) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
               `}
             />
           </div>
-        </div>
+        </motion.div>
 
         {/* Phone Number (Optional) */}
-        <div className="space-y-1">
-          <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block ml-1">
-            Phone Number <span className="text-[9px] text-slate-500 font-normal">(Optional)</span>
+        <motion.div 
+          animate={errors.phone ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
+          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          className="space-y-1.5"
+        >
+          <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block ml-1">
+            Phone Number <span className="text-[10px] text-slate-500 font-normal">(Optional)</span>
           </label>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-              <Phone size={15} />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <Phone size={18} />
             </span>
             <input
               id="reg-phone-input"
@@ -397,29 +413,33 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               }}
               placeholder="+1 555-0100"
               className={`
-                w-full pl-11 pr-4 py-2.5 bg-white/[0.01] border rounded-xl text-sm text-slate-200
-                placeholder-slate-550 focus:outline-none transition-all duration-300 font-sans
-                ${errors.phone ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/40'}
+                w-full pl-12 pr-4 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
+                placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
+                ${errors.phone ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
               `}
             />
           </div>
           {errors.phone && (
             <p className="text-xs text-red-400 ml-1">{errors.phone}</p>
           )}
-        </div>
+        </motion.div>
 
         {/* Password block with Cyber Strength bar */}
-        <div className="space-y-1">
+        <motion.div 
+          animate={errors.password ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
+          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          className="space-y-1.5"
+        >
           <div className="flex justify-between items-center ml-1">
-            <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+            <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
               Create Password
             </label>
             {password && (
-              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-450">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
                 STRENGTH:{' '}
                 <span className={
                   passwordStrength.label === 'Strong' ? 'text-[#39FF14]' : 
-                  passwordStrength.label === 'Medium' ? 'text-amber-400' : 'text-red-450'
+                  passwordStrength.label === 'Medium' ? 'text-amber-400' : 'text-red-400'
                 }>
                   {passwordStrength.label}
                 </span>
@@ -427,8 +447,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             )}
           </div>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-              <Lock size={15} />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <Lock size={18} />
             </span>
             <input
               id="reg-password-input"
@@ -441,24 +461,26 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               }}
               placeholder="Minimum 8 complex characters"
               className={`
-                w-full pl-11 pr-11 py-2.5 bg-white/[0.01] border rounded-xl text-sm text-slate-200
-                placeholder-slate-550 focus:outline-none transition-all duration-300 font-sans
-                ${errors.password ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/40'}
+                w-full pl-12 pr-14 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
+                placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
+                ${errors.password ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
               `}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              title={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#39FF14] focus:text-[#39FF14] focus:outline-none p-2.5 min-w-[44px] min-h-[44px] rounded-xl hover:bg-white/10 flex items-center justify-center transition-all cursor-pointer"
             >
-              {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
 
           {/* Graphical Cyber Password Strength indicator */}
           {password && (
-            <div className="mt-1.5 px-1 space-y-1.5">
-              <div className="h-1 w-full bg-slate-900 rounded-full overflow-hidden flex space-x-0.5">
+            <div className="mt-2 px-1 space-y-1.5">
+              <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden flex space-x-1">
                 {[1, 2, 3, 4].map((step) => (
                   <div
                     key={step}
@@ -470,7 +492,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   />
                 ))}
               </div>
-              <ul className="text-[10px] font-mono text-slate-400 space-y-0.5 grid grid-cols-2 gap-x-1.5">
+              <ul className="text-[11px] font-mono text-slate-400 space-y-1 grid grid-cols-2 gap-x-2 pt-1">
                 <li className={`flex items-center space-x-1 ${password.length >= 8 ? 'text-[#39FF14]' : ''}`}>
                   <span>{password.length >= 8 ? '✓' : '•'} 8+ characters</span>
                 </li>
@@ -489,23 +511,27 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           {errors.password && (
             <p className="text-xs text-red-400 ml-1">{errors.password}</p>
           )}
-        </div>
+        </motion.div>
 
         {/* Confirm Password Input with Match status indicator */}
-        <div className="space-y-1">
+        <motion.div 
+          animate={(errors.confirmPassword || (passwordsMatch === false)) ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
+          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          className="space-y-1.5"
+        >
           <div className="flex justify-between items-center ml-1">
-            <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+            <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
               Confirm Password
             </label>
             {passwordsMatch !== null && (
-              <span className={`text-[10px] font-mono uppercase tracking-wider ${passwordsMatch ? 'text-[#39FF14]' : 'text-red-450'}`}>
+              <span className={`text-[10px] font-mono uppercase tracking-wider ${passwordsMatch ? 'text-[#39FF14]' : 'text-red-400'}`}>
                 {passwordsMatch ? 'Passwords match ✓' : 'Mismatch ✗'}
               </span>
             )}
           </div>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-              <Lock size={15} />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <Lock size={18} />
             </span>
             <input
               id="reg-confirmpassword-input"
@@ -518,23 +544,25 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               }}
               placeholder="Re-enter your password"
               className={`
-                w-full pl-11 pr-11 py-2.5 bg-white/[0.01] border rounded-xl text-sm text-slate-200
-                placeholder-slate-550 focus:outline-none transition-all duration-300 font-sans
-                ${errors.confirmPassword || (passwordsMatch === false) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/40'}
+                w-full pl-12 pr-14 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
+                placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
+                ${errors.confirmPassword || (passwordsMatch === false) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
               `}
             />
             <button
               type="button"
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+              title={showConfirmPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#39FF14] focus:text-[#39FF14] focus:outline-none p-2.5 min-w-[44px] min-h-[44px] rounded-xl hover:bg-white/10 flex items-center justify-center transition-all cursor-pointer"
             >
-              {showConfirmPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
           {errors.confirmPassword && (
             <p className="text-xs text-red-400 ml-1">{errors.confirmPassword}</p>
           )}
-        </div>
+        </motion.div>
 
         {/* Submit Register Button */}
         <div className="pt-2">
@@ -542,10 +570,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             id="register-submit-btn"
             type="submit"
             whileHover={{ scale: isLoading ? 1 : 1.01 }}
-            whileTap={{ scale: isLoading ? 1 : 0.99 }}
+            whileTap={{ scale: isLoading ? 1 : 0.98 }}
             disabled={isLoading}
             className={`
-              w-full py-3.5 rounded-xl text-sm font-semibold tracking-wide flex items-center justify-center space-x-2 transition-all duration-300 cursor-pointer
+              w-full py-4 px-6 min-h-[50px] rounded-xl text-sm font-semibold tracking-wide flex items-center justify-center space-x-2 transition-all duration-300 cursor-pointer
               ${isLoading 
                 ? 'bg-[#39FF14]/20 text-slate-400 cursor-not-allowed border border-[#39FF14]/20' 
                 : 'bg-[#39FF14] text-black shadow-[0_4px_15px_rgba(57,255,20,0.2)] hover:shadow-[0_4px_25px_rgba(57,255,20,0.35)]'
@@ -562,7 +590,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               </div>
             ) : (
               <>
-                <UserPlus size={16} />
+                <UserPlus size={18} />
                 <span>Create Secure Account</span>
               </>
             )}
@@ -583,11 +611,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             type="button"
             onClick={handleGoogleSignIn}
             whileHover={{ scale: isLoading ? 1 : 1.01 }}
-            whileTap={{ scale: isLoading ? 1 : 0.99 }}
+            whileTap={{ scale: isLoading ? 1 : 0.98 }}
             disabled={isLoading}
-            className="w-full py-3.5 rounded-xl text-xs font-semibold tracking-wide flex items-center justify-center space-x-2 bg-white/[0.02] hover:bg-white/[0.05] text-white border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
+            className="w-full py-3.5 px-4 min-h-[48px] rounded-xl text-xs sm:text-sm font-semibold tracking-wide flex items-center justify-center space-x-2 bg-white/[0.02] hover:bg-white/[0.06] active:bg-white/[0.1] text-white border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
           >
-            <LogIn size={14} className="text-[#39FF14]" />
+            <LogIn size={16} className="text-[#39FF14]" />
             <span>Instant Access with Google Account</span>
           </motion.button>
         </div>
@@ -595,12 +623,12 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
       {/* Redirect back to Login */}
       <div className="border-t border-white/5 pt-3 text-center">
-        <p className="text-xs text-slate-450 font-sans">
-          Already have an account?{' '}
+        <p className="text-xs text-slate-400 font-sans flex items-center justify-center flex-wrap gap-1">
+          <span>Already have an account?</span>
           <button
             type="button"
             onClick={() => onNavigate('login')}
-            className="text-[#39FF14] hover:underline font-semibold font-sans cursor-pointer ml-1"
+            className="text-[#39FF14] hover:underline font-semibold font-sans cursor-pointer py-2 px-2.5 min-h-[44px] inline-flex items-center rounded-xl hover:bg-white/5"
           >
             Sign In Instead
           </button>

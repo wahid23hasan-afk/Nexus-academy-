@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Bell, 
@@ -23,7 +23,10 @@ import {
   Smartphone,
   SlidersHorizontal,
   Sparkles,
-  Info
+  Info,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink
 } from 'lucide-react';
 import { Notification, NotificationCategory, NotificationType, NotificationSetting } from '../types/notification';
 import { notificationService } from '../services/notificationService';
@@ -36,6 +39,8 @@ interface NotificationCenterProps {
   onNavigateToTab: (tab: 'discover' | 'my-courses' | 'certificates') => void;
   onSelectCourseById: (courseId: string) => void;
   userId?: string;
+  userProfile?: { fullName?: string; username?: string; photoURL?: string } | null;
+  notifications?: Notification[];
 }
 
 export function NotificationCenter({ 
@@ -44,14 +49,25 @@ export function NotificationCenter({
   onShowNotification,
   onNavigateToTab,
   onSelectCourseById,
-  userId = ''
+  userId = '',
+  userProfile,
+  notifications: notificationsProp
 }: NotificationCenterProps) {
   const [activeTab, setActiveTab] = useState<'notifications' | 'preferences'>('notifications');
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>(notificationsProp || []);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<NotificationCategory | 'all'>('all');
   const [settings, setSettings] = useState<NotificationSetting | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(!notificationsProp);
+  const [expandedNotifId, setExpandedNotifId] = useState<string | null>(null);
+
+  // Sync with prop when provided
+  useEffect(() => {
+    if (notificationsProp) {
+      setNotifications(notificationsProp);
+      setLoading(false);
+    }
+  }, [notificationsProp]);
   
   // Sandbox Simulator State
   const [simulatedType, setSimulatedType] = useState<NotificationType>('Live Class Reminder');
@@ -60,9 +76,26 @@ export function NotificationCenter({
   const [simulating, setSimulating] = useState<boolean>(false);
 
   // Format Time Ago
-  const formatTimeAgo = (isoString: string) => {
+  const formatTimeAgo = (createdAt: any) => {
+    if (!createdAt) return 'Recently';
     try {
-      const date = new Date(isoString);
+      let date: Date;
+      if (typeof createdAt === 'string') {
+        date = new Date(createdAt);
+      } else if (typeof createdAt === 'number') {
+        date = new Date(createdAt);
+      } else if (createdAt && typeof createdAt.toDate === 'function') {
+        date = createdAt.toDate();
+      } else if (createdAt && typeof createdAt.seconds === 'number') {
+        date = new Date(createdAt.seconds * 1000);
+      } else {
+        date = new Date(createdAt);
+      }
+
+      if (isNaN(date.getTime())) {
+        return 'Recently';
+      }
+
       const now = new Date();
       const diffMs = now.getTime() - date.getTime();
       const diffMins = Math.floor(diffMs / 60000);
@@ -81,28 +114,32 @@ export function NotificationCenter({
 
   // Subscribe to real-time notifications from Firestore
   useEffect(() => {
-    if (!userId || userId === 'guest_user') {
-      setNotifications([]);
-      setLoading(false);
-      return;
-    }
+    const effectiveUserId = userId || auth.currentUser?.uid || userProfile?.username || 'guest_user';
+    const effectiveEmail = auth.currentUser?.email || userProfile?.username || undefined;
+    const effectiveName = userProfile?.fullName || auth.currentUser?.displayName || undefined;
 
     setLoading(true);
-    const userEmail = auth.currentUser?.email || undefined;
-    const unsubscribe = notificationService.listenToNotifications(userId, (list) => {
-      setNotifications(list);
-      setLoading(false);
-    }, userEmail);
+    const unsubscribe = notificationService.listenToNotifications(
+      effectiveUserId, 
+      (list) => {
+        setNotifications(list);
+        setLoading(false);
+      }, 
+      effectiveEmail, 
+      effectiveName
+    );
 
     // Load custom notification settings
-    notificationService.getNotificationSettings(userId).then((res) => {
-      setSettings(res);
-    }).catch((err) => {
-      console.warn('Silent settings fetch failure:', err);
-    });
+    if (effectiveUserId && effectiveUserId !== 'guest_user') {
+      notificationService.getNotificationSettings(effectiveUserId).then((res) => {
+        setSettings(res);
+      }).catch((err) => {
+        console.warn('Silent settings fetch failure:', err);
+      });
+    }
 
     return () => unsubscribe();
-  }, [userId]);
+  }, [userId, userProfile]);
 
   // Handle setting updates
   const handleToggleSetting = async (key: keyof Omit<NotificationSetting, 'userId' | 'updatedAt'>) => {
@@ -122,8 +159,10 @@ export function NotificationCenter({
   // Mark single as read
   const handleMarkRead = async (notif: Notification) => {
     if (!notif.unread) return;
+    const effectiveEmail = auth.currentUser?.email || userProfile?.username || undefined;
+    const effectiveUid = userId || auth.currentUser?.uid || userProfile?.username || 'guest_user';
     try {
-      await notificationService.markAsRead(notif.notificationId);
+      await notificationService.markAsRead(notif.notificationId, effectiveUid, effectiveEmail);
     } catch (err) {
       console.error(err);
     }
@@ -131,12 +170,21 @@ export function NotificationCenter({
 
   // Mark all as read
   const handleMarkAllRead = async () => {
-    const unreadIds = notifications.filter(n => n.unread).map(n => n.notificationId);
-    if (unreadIds.length === 0) return;
+    const unreadNotifs = notifications.filter(n => n.unread).map(n => ({
+      notificationId: n.notificationId,
+      userId: n.userId
+    }));
+    if (unreadNotifs.length === 0) return;
     
+    const effectiveEmail = auth.currentUser?.email || userProfile?.username || undefined;
+    const effectiveUid = userId || auth.currentUser?.uid || userProfile?.username || 'guest_user';
+
     try {
-      await notificationService.markAllAsRead(userId, unreadIds);
-      onShowNotification('All cleared as read.', 'success');
+      await notificationService.markAllAsRead(effectiveUid, unreadNotifs, effectiveEmail);
+      if (selectedCategory === 'unread') {
+        setSelectedCategory('all');
+      }
+      onShowNotification('All marked as read.', 'success');
     } catch (err) {
       onShowNotification('Failed to mark all as read.', 'error');
     }
@@ -209,9 +257,15 @@ export function NotificationCenter({
     }
   };
 
-  // Handle click on notification (Deep Linking & Actions)
+  // Handle click on notification: Mark as read & toggle expand/open to read full message
   const handleNotificationClick = async (notif: Notification) => {
     await handleMarkRead(notif);
+    setExpandedNotifId(prev => prev === notif.notificationId ? null : notif.notificationId);
+  };
+
+  // Explicit action navigation button inside expanded notification
+  const handleNavigateWorkspace = (e: React.MouseEvent, notif: Notification) => {
+    e.stopPropagation();
     onClose();
 
     if (notif.relatedPage) {
@@ -237,8 +291,9 @@ export function NotificationCenter({
   const filteredNotifications = notifications.filter((n) => {
     // 1. Filter by Category Tab
     if (selectedCategory !== 'all') {
-      if (selectedCategory === 'unread' && !n.unread) return false;
-      if (selectedCategory === 'read' && n.unread) return false;
+      const isCurrentlyExpanded = expandedNotifId === n.notificationId;
+      if (selectedCategory === 'unread' && !n.unread && !isCurrentlyExpanded) return false;
+      if (selectedCategory === 'read' && n.unread && !isCurrentlyExpanded) return false;
       if (selectedCategory !== 'unread' && selectedCategory !== 'read' && n.category !== selectedCategory) return false;
     }
 
@@ -399,7 +454,7 @@ export function NotificationCenter({
                     className="text-[9px] font-mono text-[#39FF14] hover:underline flex items-center space-x-1 cursor-pointer"
                   >
                     <CheckCheck size={10} className="mr-0.5" />
-                    <span>Clear Unread</span>
+                    <span>Mark All as Read</span>
                   </button>
                 )}
               </div>
@@ -426,70 +481,116 @@ export function NotificationCenter({
                     <p className="text-[10px] font-mono text-slate-400">No matching notifications found.</p>
                   </div>
                 ) : (
-                  filteredNotifications.map((notif) => (
-                    <motion.div
-                      layout
-                      key={notif.notificationId}
-                      className={`p-3 border rounded-xl relative overflow-hidden transition-all duration-300 group ${
-                        notif.unread
-                          ? 'bg-[#39FF14]/5 border-[#39FF14]/15 shadow-[0_0_10px_rgba(57,255,20,0.03)]'
-                          : 'bg-white/[0.01] border-white/5 opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      {/* Left color ribbon for unread alerts */}
-                      {notif.unread && (
-                        <div className="absolute top-0 left-0 bottom-0 w-[3px] bg-[#39FF14]" />
-                      )}
+                  filteredNotifications.map((notif, index) => {
+                    const isExpanded = expandedNotifId === notif.notificationId;
 
-                      <div className="flex items-start space-x-2.5">
-                        <div className={`mt-0.5 p-1.5 rounded-lg border flex items-center justify-center shrink-0 ${
-                          notif.unread ? 'bg-[#39FF14]/10 border-[#39FF14]/20' : 'bg-white/5 border-white/5'
-                        }`}>
-                          {getCategoryIcon(notif.type)}
-                        </div>
+                    return (
+                      <motion.div
+                        layout
+                        key={notif.notificationId ? `${notif.notificationId}_${index}` : `notif_${index}`}
+                        onClick={() => handleNotificationClick(notif)}
+                        className={`p-3 border rounded-xl relative overflow-hidden transition-all duration-300 group cursor-pointer ${
+                          notif.unread
+                            ? 'bg-[#39FF14]/5 border-[#39FF14]/25 shadow-[0_0_12px_rgba(57,255,20,0.05)]'
+                            : isExpanded
+                            ? 'bg-white/[0.04] border-[#39FF14]/40 shadow-md'
+                            : 'bg-white/[0.01] border-white/5 opacity-80 hover:opacity-100 hover:bg-white/[0.03]'
+                        }`}
+                      >
+                        {/* Left color ribbon for unread alerts */}
+                        {notif.unread && (
+                          <div className="absolute top-0 left-0 bottom-0 w-[3px] bg-[#39FF14]" />
+                        )}
 
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <div className="flex justify-between items-start">
-                            <span className="text-[8px] font-mono text-slate-400 tracking-wider uppercase bg-white/5 px-1 py-0.5 rounded border border-white/5">
-                              {notif.type}
-                            </span>
-                            <span className="text-[8px] font-mono text-slate-500">
-                              {formatTimeAgo(notif.createdAt)}
-                            </span>
+                        <div className="flex items-start space-x-2.5">
+                          <div className={`mt-0.5 p-1.5 rounded-lg border flex items-center justify-center shrink-0 ${
+                            notif.unread ? 'bg-[#39FF14]/10 border-[#39FF14]/20' : 'bg-white/5 border-white/5'
+                          }`}>
+                            {getCategoryIcon(notif.type)}
                           </div>
 
-                          <h4 
-                            onClick={() => handleNotificationClick(notif)}
-                            className="text-[10px] font-semibold text-white leading-tight font-sans hover:text-[#39FF14] transition-colors cursor-pointer"
-                          >
-                            {notif.title}
-                          </h4>
-                          <p className="text-[9px] text-slate-300 leading-normal font-sans">
-                            {notif.message}
-                          </p>
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[8px] font-mono text-slate-400 tracking-wider uppercase bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
+                                {notif.type}
+                              </span>
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-[8px] font-mono text-slate-500">
+                                  {formatTimeAgo(notif.createdAt)}
+                                </span>
+                                {isExpanded ? (
+                                  <ChevronUp size={12} className="text-[#39FF14]" />
+                                ) : (
+                                  <ChevronDown size={12} className="text-slate-500 group-hover:text-slate-300" />
+                                )}
+                              </div>
+                            </div>
 
-                          {notif.relatedPage && (
+                            <h4 className="text-[11px] font-semibold text-white leading-snug font-sans group-hover:text-[#39FF14] transition-colors">
+                              {notif.title}
+                            </h4>
+
+                            {/* Message preview or expanded readable message */}
+                            <p className={`text-[10px] text-slate-300 font-sans ${
+                              isExpanded ? 'leading-relaxed text-slate-200 pt-1 border-t border-white/5 mt-1' : 'line-clamp-2 leading-normal'
+                            }`}>
+                              {notif.message}
+                            </p>
+
+                            {/* Expanded Action & Navigation Details */}
+                            {isExpanded && (
+                              <div className="pt-2 flex items-center justify-between border-t border-white/10 mt-2">
+                                {notif.relatedPage ? (
+                                  <button
+                                    onClick={(e) => handleNavigateWorkspace(e, notif)}
+                                    className="text-[9px] font-mono font-semibold text-[#39FF14] bg-[#39FF14]/10 hover:bg-[#39FF14]/20 border border-[#39FF14]/30 px-2.5 py-1 rounded-lg flex items-center space-x-1 transition-all cursor-pointer"
+                                  >
+                                    <span>Navigate workspace</span>
+                                    <ExternalLink size={10} />
+                                  </button>
+                                ) : (
+                                  <span className="text-[8px] font-mono text-slate-500">Read & saved</span>
+                                )}
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteNotif(notif.notificationId);
+                                  }}
+                                  className="text-[9px] font-mono text-red-400 hover:text-red-300 hover:bg-red-500/10 px-2 py-1 rounded border border-red-500/20 transition-all cursor-pointer flex items-center space-x-1"
+                                  title="Delete notification"
+                                >
+                                  <Trash2 size={10} />
+                                  <span>Remove</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {!isExpanded && notif.relatedPage && (
+                              <div className="text-[8px] font-mono text-[#39FF14] flex items-center space-x-1 pt-0.5">
+                                <span>Click to read details</span>
+                                <span>→</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Quick delete trash button */}
+                          {!isExpanded && (
                             <button
-                              onClick={() => handleNotificationClick(notif)}
-                              className="text-[8px] font-mono text-[#39FF14] hover:underline flex items-center space-x-1 pt-1 cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteNotif(notif.notificationId);
+                              }}
+                              className="p-1 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded-md transition-all self-center opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer shrink-0"
+                              title="Delete notification"
                             >
-                              <span>Navigate workspace</span>
-                              <span>→</span>
+                              <Trash2 size={11} />
                             </button>
                           )}
                         </div>
-
-                        {/* Delete Trash button shown on hover/touch */}
-                        <button
-                          onClick={() => handleDeleteNotif(notif.notificationId)}
-                          className="p-1 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded-md transition-all self-center opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer shrink-0"
-                          title="Delete notification"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))
+                      </motion.div>
+                    );
+                  })
                 )}
               </div>
             </>

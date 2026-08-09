@@ -4,7 +4,10 @@ import {
   setPersistence, 
   browserLocalPersistence 
 } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  enableIndexedDbPersistence 
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -28,6 +31,17 @@ setPersistence(auth, browserLocalPersistence).catch((error) => {
 
 // Initialize Firestore
 export const db = getFirestore(app);
+
+// Enable offline IndexedDB persistence for Firestore
+if (typeof window !== 'undefined') {
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('Firestore offline persistence failed: Multiple tabs open');
+    } else if (err.code === 'unimplemented') {
+      console.warn('Firestore offline persistence is not supported by this browser');
+    }
+  });
+}
 
 // Initialize Storage
 export const storage = getStorage(app);

@@ -34,10 +34,11 @@ import { gamificationService } from '../services/gamificationService';
 
 interface CommunityViewProps {
   userProfile: { fullName: string; username: string; photoURL?: string } | null;
+  onBackToProfile?: () => void;
   onShowNotification: (message: string, type: 'success' | 'error') => void;
 }
 
-export function CommunityView({ userProfile, onShowNotification }: CommunityViewProps) {
+export function CommunityView({ userProfile, onBackToProfile, onShowNotification }: CommunityViewProps) {
   // Navigation & UI States
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [selectedPost, setSelectedPost] = useState<CommunityPost | null>(null);
@@ -817,6 +818,18 @@ export function CommunityView({ userProfile, onShowNotification }: CommunityView
             exit={{ opacity: 0 }}
             className="flex-1 flex flex-col space-y-4"
           >
+            {onBackToProfile && (
+              <div className="flex items-center justify-between pb-1">
+                <button
+                  onClick={onBackToProfile}
+                  className="flex items-center space-x-1.5 text-xs text-slate-400 hover:text-[#39FF14] font-mono uppercase tracking-wider transition-colors cursor-pointer"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Back to Profile</span>
+                </button>
+              </div>
+            )}
+
             {/* SEARCH AND ASK BUTTON OVERVIEW */}
             <div className="flex items-center space-x-2">
               <div className="relative flex-1">

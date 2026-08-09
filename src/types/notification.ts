@@ -29,6 +29,7 @@ export interface Notification {
   category: NotificationCategory;
   type: NotificationType;
   unread: boolean;
+  readBy?: string[];
   relatedPage?: string; // e.g. 'course-details' | 'quiz' | 'certificates' | 'courses'
   targetId?: string; // e.g. courseId, quizId, certificateId
   createdAt: string; // ISO 8601 string

@@ -499,19 +499,27 @@ function LiveClassDetails({
         </div>
 
         {/* Requirements */}
-        {cls.requirements && cls.requirements.length > 0 && (
-          <div className="space-y-1.5">
-            <h4 className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Pre-requisite Blueprints</h4>
-            <ul className="space-y-1">
-              {cls.requirements.map((req, idx) => (
-                <li key={idx} className="flex items-start space-x-1.5 text-[10.5px] text-slate-300 font-sans">
-                  <CheckCircle size={10} className="text-[#39FF14] mt-0.5 flex-shrink-0" />
-                  <span>{req}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {(() => {
+          const reqs = Array.isArray(cls.requirements)
+            ? cls.requirements
+            : typeof cls.requirements === 'string'
+              ? (cls.requirements as string).split(',').map(s => s.trim()).filter(Boolean)
+              : [];
+          if (reqs.length === 0) return null;
+          return (
+            <div className="space-y-1.5">
+              <h4 className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Pre-requisite Blueprints</h4>
+              <ul className="space-y-1">
+                {reqs.map((req, idx) => (
+                  <li key={idx} className="flex items-start space-x-1.5 text-[10.5px] text-slate-300 font-sans">
+                    <CheckCircle size={10} className="text-[#39FF14] mt-0.5 flex-shrink-0" />
+                    <span>{req}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
 
         {/* Instructor Profile Card */}
         <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex space-x-3 items-center">
