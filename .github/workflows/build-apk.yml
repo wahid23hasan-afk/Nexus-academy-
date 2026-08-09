@@ -22,19 +22,19 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Verify Java environment
         run: |
           java -version
           echo "JAVA_HOME=$JAVA_HOME"
           JAVA_VER=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
-          if [ "$JAVA_VER" -lt 17 ]; then
-            echo "Error: Active Java version $JAVA_VER is below required Java 17!"
+          if [ "$JAVA_VER" -lt 21 ]; then
+            echo "Error: Active Java version $JAVA_VER is below required Java 21!"
             exit 1
           fi
 
