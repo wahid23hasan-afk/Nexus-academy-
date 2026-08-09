@@ -74,6 +74,13 @@ export default function App() {
     }
   }, [toast]);
 
+  // Check redirect result from Google sign-in
+  useEffect(() => {
+    authService.handleRedirectResult().catch((err) => {
+      console.warn('Redirect sign-in handler error:', err);
+    });
+  }, []);
+
   // Firebase Authentication State Observer (Session Persistence & Auto Login)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {

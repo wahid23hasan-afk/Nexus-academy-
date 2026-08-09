@@ -60,7 +60,7 @@ export const GlowBackground: React.FC<GlowBackgroundProps> = ({ children }) => {
         </div>
 
         {/* Content container */}
-        <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden no-scrollbar pt-4 sm:pt-8 pb-6 px-6 relative z-10 scroll-smooth">
+        <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden no-scrollbar pt-3 sm:pt-6 pb-2 px-3 sm:px-4 relative z-10 scroll-smooth">
           {children}
         </div>
 

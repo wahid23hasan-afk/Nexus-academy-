@@ -649,7 +649,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
   }
 
   return (
-    <div className="flex-1 flex flex-col justify-between py-1 px-1 text-slate-100 max-w-lg mx-auto w-full relative">
+    <div className="flex-1 flex flex-col justify-between py-1 px-1 text-slate-100 max-w-lg mx-auto w-full relative pb-28">
       
       {/* ================= HEADER ================= */}
       <header className="flex items-center justify-between py-3 px-1 border-b border-white/5 relative z-10 bg-[#0a0f1d]">
@@ -1512,9 +1512,13 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         </>
       )}
 
+      <footer className="mt-8 pt-4 pb-2 text-center font-mono text-[9px] text-slate-500 tracking-wider">
+        NEXUS PORTAL • STUDY COURSE DISCOVERY SYSTEM
+      </footer>
+
       {/* ================= PERSISTENT BOTTOM NAVIGATION BAR ================= */}
-      <div className="sticky bottom-0 z-40 pt-4 pb-2 bg-gradient-to-t from-[#0a0f1d] via-[#0a0f1d]/95 to-transparent">
-        <div className="glass-panel rounded-2xl p-2.5 flex items-center justify-around">
+      <div className="sticky -bottom-1 z-40 pt-2 pb-2 bg-[#0a0f1d]/95 backdrop-blur-xl border-t border-white/10 shadow-2xl rounded-2xl -mx-1 px-1">
+        <div className="glass-panel rounded-2xl p-2 flex items-center justify-around">
           {/* Catalog / Discover Tab */}
           <button
             onClick={() => setActiveTab('discover')}
@@ -1580,10 +1584,6 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           </button>
         </div>
       </div>
-
-      <footer className="mt-4 pt-1 pb-3 text-center font-mono text-[9px] text-slate-500 tracking-wider">
-        NEXUS PORTAL • STUDY COURSE DISCOVERY SYSTEM
-      </footer>
 
       {/* Notification and Preferences Sidebar Drawer */}
       <NotificationCenter

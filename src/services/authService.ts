@@ -8,8 +8,11 @@ import {
   updateProfile, 
   verifyBeforeUpdateEmail,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult
 } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
 import { 
   doc, 
   setDoc, 
@@ -25,6 +28,20 @@ import { auth, db, storage } from './firebase';
 import { User } from '../types/auth';
 
 export const authService = {
+  // Check if user returned from Google signInWithRedirect
+  async handleRedirectResult(): Promise<any> {
+    try {
+      const result = await getRedirectResult(auth);
+      if (result && result.user) {
+        const user = result.user;
+        await this.checkAndInitializeProfile(user);
+        return user;
+      }
+    } catch (error) {
+      console.warn('Error handling redirect sign-in result:', error);
+    }
+    return null;
+  },
   // Query Firestore to check if a username is already taken
   async isUsernameTaken(username: string): Promise<boolean> {
     try {
@@ -220,9 +237,50 @@ export const authService = {
   // Login/Register with Google provider
   async loginWithGoogle(): Promise<{ success: boolean; error?: string; user?: any; operationNotAllowed?: boolean }> {
     try {
+      const isNativeApp = typeof window !== 'undefined' && Capacitor.isNativePlatform();
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, provider);
+
+      let result;
+      try {
+        result = await signInWithPopup(auth, provider);
+      } catch (popupError: any) {
+        console.warn('Google signInWithPopup error:', popupError);
+
+        const errCode = popupError?.code || '';
+        const errMsg = (popupError?.message || '').toLowerCase();
+
+        // Check if missing initial state / sessionStorage partitioned / popup blocked
+        if (
+          isNativeApp ||
+          errCode === 'auth/missing-initial-state' ||
+          errCode === 'auth/popup-blocked' ||
+          errMsg.includes('missing initial state') ||
+          errMsg.includes('sessionstorage')
+        ) {
+          // If in web browser (not APK), try redirect as fallback
+          if (!isNativeApp) {
+            try {
+              await signInWithRedirect(auth, provider);
+              return { success: false, error: 'Redirecting to Google Sign-In... Please complete sign-in in browser.' };
+            } catch (redirectErr) {
+              console.warn('signInWithRedirect failed:', redirectErr);
+            }
+          }
+
+          let friendlyMessage = 'Google Sign-In is restricted in this app environment.';
+          if (isNativeApp || errMsg.includes('missing initial state') || errMsg.includes('sessionstorage')) {
+            friendlyMessage = 'Google Browser Popup is restricted in mobile APK due to Android browser session storage partitioning. Please sign in or register with Email & Password below (100% instant & secure!).';
+          } else {
+            friendlyMessage = 'Google Sign-In popup was blocked. Please allow popups or use Email & Password sign-in below.';
+          }
+
+          return { success: false, error: friendlyMessage };
+        }
+
+        throw popupError;
+      }
+
       const user = result.user;
 
       // Sync/Initialize user profile state in Firestore
@@ -271,7 +329,9 @@ export const authService = {
       if (error.code === 'auth/popup-closed-by-user') {
         message = 'The sign-in popup was closed before completing.';
       } else if (error.code === 'auth/popup-blocked') {
-        message = 'The sign-in popup was blocked by your browser. Please allow popups for this site and try again.';
+        message = 'The sign-in popup was blocked by your browser. Please allow popups or use Email & Password sign-in.';
+      } else if (error.code === 'auth/missing-initial-state' || (error.message && error.message.includes('missing initial state'))) {
+        message = 'Google Sign-In session storage issue detected. In mobile app / Android WebView, please sign in or register with Email & Password directly below!';
       } else if (error.code === 'auth/unauthorized-domain') {
         const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'current domain';
         message = `This domain (${currentDomain}) is not authorized for Google Sign-In in Firebase Console. Please add "${currentDomain}" under Authentication > Settings > Authorized Domains in Firebase Console.`;
@@ -279,7 +339,7 @@ export const authService = {
         message = 'Google sign-in is not enabled in your Firebase console. Please enable the Google sign-in provider in Firebase Auth settings.';
         operationNotAllowed = true;
       } else if (error.code === 'auth/cancelled-popup-request') {
-        message = 'The sign-in request was cancelled. Please try again.';
+        message = 'The sign-in request was cancelled. Please try again or use Email & Password sign-in.';
       } else if (error.code === 'auth/account-exists-with-different-credential') {
         message = 'An account already exists with the same email using a different sign-in method.';
       } else if (error.code === 'auth/network-request-failed') {

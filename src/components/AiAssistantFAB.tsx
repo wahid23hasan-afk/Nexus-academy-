@@ -24,16 +24,18 @@ export function AiAssistantFAB({ onClick, isOpen }: AiAssistantFABProps) {
   const startPointerPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const wasDraggedRef = useRef<boolean>(false);
 
-  // Load saved position on mount
+  // Load saved position on mount with strict safe area bounds
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-          // Clamp to current window bounds
+          // Safe boundaries: top header (~80px) and bottom nav bar (~100px)
+          const topMin = 80;
+          const bottomMin = 100;
           const clampedX = Math.max(12, Math.min(window.innerWidth - FAB_SIZE - 12, parsed.x));
-          const clampedY = Math.max(12, Math.min(window.innerHeight - FAB_SIZE - 12, parsed.y));
+          const clampedY = Math.max(topMin, Math.min(window.innerHeight - FAB_SIZE - bottomMin, parsed.y));
           setCoords({ x: clampedX, y: clampedY });
         }
       }
@@ -42,13 +44,15 @@ export function AiAssistantFAB({ onClick, isOpen }: AiAssistantFABProps) {
     }
   }, []);
 
-  // Window resize protection to keep inside screen
+  // Window resize protection to keep inside safe screen area
   useEffect(() => {
     const handleResize = () => {
       setCoords((prev) => {
         if (!prev) return null;
+        const topMin = 80;
+        const bottomMin = 100;
         const clampedX = Math.max(12, Math.min(window.innerWidth - FAB_SIZE - 12, prev.x));
-        const clampedY = Math.max(12, Math.min(window.innerHeight - FAB_SIZE - 12, prev.y));
+        const clampedY = Math.max(topMin, Math.min(window.innerHeight - FAB_SIZE - bottomMin, prev.y));
         return { x: clampedX, y: clampedY };
       });
     };
@@ -121,8 +125,10 @@ export function AiAssistantFAB({ onClick, isOpen }: AiAssistantFABProps) {
       // If dragging mode is ACTIVE (unlocked after 2s hold)
       if (isDragging) {
         e.preventDefault();
+        const topMin = 80;
+        const bottomMin = 100;
         const newX = Math.max(12, Math.min(window.innerWidth - FAB_SIZE - 12, e.clientX - FAB_SIZE / 2));
-        const newY = Math.max(12, Math.min(window.innerHeight - FAB_SIZE - 12, e.clientY - FAB_SIZE / 2));
+        const newY = Math.max(topMin, Math.min(window.innerHeight - FAB_SIZE - bottomMin, e.clientY - FAB_SIZE / 2));
         setCoords({ x: newX, y: newY });
       }
     };
@@ -210,8 +216,8 @@ export function AiAssistantFAB({ onClick, isOpen }: AiAssistantFABProps) {
                 }
               : {
                   position: 'fixed',
-                  bottom: '24px',
-                  right: '24px',
+                  bottom: '90px',
+                  right: '16px',
                   zIndex: 9999,
                   touchAction: 'none'
                 }
