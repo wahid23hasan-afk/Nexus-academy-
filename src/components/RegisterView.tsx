@@ -280,8 +280,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
         {/* Full Name Input */}
         <motion.div 
-          animate={errors.fullName ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
-          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={errors.fullName ? { opacity: 1, y: 0, x: [-8, 8, -6, 6, -3, 3, 0] } : { opacity: 1, y: 0, x: 0 }}
+          transition={{ duration: 0.35, delay: 0.05, ease: 'easeOut' }}
           className="space-y-1.5"
         >
           <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block ml-1">
@@ -314,8 +315,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
         {/* Username Input with dynamic status indicator */}
         <motion.div 
-          animate={(errors.username || (usernameValid.checked && !usernameValid.valid)) ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
-          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={(errors.username || (usernameValid.checked && !usernameValid.valid)) ? { opacity: 1, y: 0, x: [-8, 8, -6, 6, -3, 3, 0] } : { opacity: 1, y: 0, x: 0 }}
+          transition={{ duration: 0.35, delay: 0.1, ease: 'easeOut' }}
           className="space-y-1.5"
         >
           <div className="flex justify-between items-center ml-1">
@@ -353,8 +355,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
         {/* Email Address with dynamic uniqueness indicator */}
         <motion.div 
-          animate={(errors.email || (emailValid.checked && !emailValid.valid)) ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
-          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={(errors.email || (emailValid.checked && !emailValid.valid)) ? { opacity: 1, y: 0, x: [-8, 8, -6, 6, -3, 3, 0] } : { opacity: 1, y: 0, x: 0 }}
+          transition={{ duration: 0.35, delay: 0.15, ease: 'easeOut' }}
           className="space-y-1.5"
         >
           <div className="flex justify-between items-center ml-1">
@@ -392,8 +395,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
         {/* Phone Number (Optional) */}
         <motion.div 
-          animate={errors.phone ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
-          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={errors.phone ? { opacity: 1, y: 0, x: [-8, 8, -6, 6, -3, 3, 0] } : { opacity: 1, y: 0, x: 0 }}
+          transition={{ duration: 0.35, delay: 0.2, ease: 'easeOut' }}
           className="space-y-1.5"
         >
           <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block ml-1">
@@ -426,8 +430,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
         {/* Password block with Cyber Strength bar */}
         <motion.div 
-          animate={errors.password ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
-          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={errors.password ? { opacity: 1, y: 0, x: [-8, 8, -6, 6, -3, 3, 0] } : { opacity: 1, y: 0, x: 0 }}
+          transition={{ duration: 0.35, delay: 0.25, ease: 'easeOut' }}
           className="space-y-1.5"
         >
           <div className="flex justify-between items-center ml-1">
@@ -515,8 +520,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
         {/* Confirm Password Input with Match status indicator */}
         <motion.div 
-          animate={(errors.confirmPassword || (passwordsMatch === false)) ? { x: [-8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
-          transition={{ duration: 0.35, ease: 'easeInOut' }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={(errors.confirmPassword || (passwordsMatch === false)) ? { opacity: 1, y: 0, x: [-8, 8, -6, 6, -3, 3, 0] } : { opacity: 1, y: 0, x: 0 }}
+          transition={{ duration: 0.35, delay: 0.3, ease: 'easeOut' }}
           className="space-y-1.5"
         >
           <div className="flex justify-between items-center ml-1">

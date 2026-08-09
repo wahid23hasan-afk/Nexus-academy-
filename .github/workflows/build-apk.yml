@@ -59,6 +59,16 @@ jobs:
           if [ ! -d android ]; then
             npx cap add android
           fi
+          if ! grep -q "kotlin-stdlib-jdk8:1.8.22" android/build.gradle; then
+            node -e '
+              const fs = require("fs");
+              let content = fs.readFileSync("android/build.gradle", "utf8");
+              if (!content.includes("kotlin-stdlib-jdk8:1.8.22")) {
+                content = content.replace("allprojects {", `allprojects {\n    configurations.all {\n        resolutionStrategy {\n            force "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"\n            force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22"\n            force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22"\n        }\n    }`);
+                fs.writeFileSync("android/build.gradle", content);
+              }
+            '
+          fi
           npx cap sync android
 
       - name: Create temporary debug keystore
