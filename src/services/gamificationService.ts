@@ -1638,82 +1638,119 @@ export const gamificationService = {
   // XP MARKETPLACE & STORE (PERKS BAZAAR) APIS
   // ==========================================
 
-  // 1. Real-time Subscription to XP Store Items (Listens to `xp_store_items` collection with fallback)
+  // 1. Real-time Subscription to XP Store Items (Listens to `xpStoreItems` or fallback `xp_store_items` collection)
   subscribeXpStoreItems(callback: (items: any[]) => void): () => void {
     try {
-      const itemsCollectionRef = collection(db, 'xp_store_items');
+      const primaryCollectionRef = collection(db, 'xpStoreItems');
+      const fallbackCollectionRef = collection(db, 'xp_store_items');
       
-      const unsubscribe = onSnapshot(itemsCollectionRef, async (snapshot) => {
-        if (!snapshot.empty) {
-          const items = snapshot.docs.map(docSnap => {
-            const data = docSnap.data();
-            const cost = Number(data.costXP || data.priceXp || 100);
-            const title = data.title || data.name || 'Perk Item';
-            const category = data.category || data.perkType || 'perk';
-            const perkGranted = data.perkGranted || data.perkDetails || 'Special Perk Granted';
-            const isActive = data.isActive !== false && data.status !== 'inactive' && data.availability !== 'inactive';
-            const order = Number(data.order !== undefined ? data.order : cost);
-            
-            return {
-              id: docSnap.id,
-              name: title,
-              title: title,
-              category: category,
-              perkType: category,
-              description: data.description || '',
-              costXP: cost,
-              priceXp: cost,
-              icon: data.icon || '✨',
-              perkGranted: perkGranted,
-              perkDetails: perkGranted,
-              isActive: isActive,
-              availability: isActive ? 'active' : 'inactive',
-              status: isActive ? 'active' : 'inactive',
-              targetScope: data.targetScope || 'all',
-              previewClass: data.previewClass || '',
-              order: order
-            };
-          })
-          .filter(item => item.isActive)
-          .sort((a, b) => (a.order - b.order) || (a.costXP - b.costXP));
+      const mapDocs = (snapshot: any) => {
+        return snapshot.docs.map((docSnap: any) => {
+          const data = docSnap.data();
+          const cost = Number(data.xpPrice || data.xpCost || data.costXP || data.priceXp || 100);
+          const title = data.title || data.name || 'Perk Item';
+          const category = data.category || data.perkType || 'perk';
+          const perkGranted = data.perkDetails || data.perkGranted || 'Special Perk Granted';
+          const isActive = data.isActive !== false && data.status !== 'inactive' && data.availability !== 'inactive';
+          const order = Number(data.order !== undefined ? data.order : cost);
+          
+          return {
+            id: docSnap.id,
+            name: title,
+            title: title,
+            category: category,
+            perkType: category,
+            description: data.description || '',
+            costXP: cost,
+            priceXp: cost,
+            xpPrice: cost,
+            xpCost: cost,
+            icon: data.icon || '✨',
+            perkGranted: perkGranted,
+            perkDetails: perkGranted,
+            isActive: isActive,
+            availability: isActive ? 'active' : 'inactive',
+            status: isActive ? 'active' : 'inactive',
+            targetScope: data.targetScope || 'all',
+            previewClass: data.previewClass || '',
+            order: order
+          };
+        })
+        .filter((item: any) => item.isActive)
+        .sort((a: any, b: any) => (a.order - b.order) || (a.costXP - b.costXP));
+      };
 
+      // Let's setup snapshot listener on primary collection
+      let activeUnsubscribe: (() => void) | null = null;
+      let isFallbackActive = false;
+
+      const unsubscribePrimary = onSnapshot(primaryCollectionRef, async (snapshot) => {
+        if (!snapshot.empty) {
+          const items = mapDocs(snapshot);
           callback(items);
-        } else {
-          // Fallback to appSettings/xpStoreCatalog document or defaults
-          try {
-            const catalogDoc = await getDoc(doc(db, 'appSettings', 'xpStoreCatalog'));
-            if (catalogDoc.exists() && Array.isArray(catalogDoc.data().items) && catalogDoc.data().items.length > 0) {
-              const items = catalogDoc.data().items
-                .filter((item: any) => item.availability === 'active' || item.isActive !== false)
-                .map((item: any) => ({
-                  ...item,
-                  title: item.title || item.name,
-                  name: item.name || item.title,
-                  costXP: Number(item.costXP || item.priceXp || 100),
-                  priceXp: Number(item.priceXp || item.costXP || 100),
-                  perkType: item.perkType || item.category,
-                  category: item.category || item.perkType,
-                  perkGranted: item.perkGranted || item.perkDetails,
-                  perkDetails: item.perkDetails || item.perkGranted,
-                  isActive: true
-                }));
+        } else if (!isFallbackActive) {
+          // If empty and fallback is not active yet, subscribe to fallback collection
+          isFallbackActive = true;
+          activeUnsubscribe = onSnapshot(fallbackCollectionRef, async (fbSnapshot) => {
+            if (!fbSnapshot.empty) {
+              const items = mapDocs(fbSnapshot);
               callback(items);
             } else {
-              // Trigger default seeding in background if completely empty
-              callback([]);
+              // Fallback to appSettings document
+              try {
+                const catalogDoc = await getDoc(doc(db, 'appSettings', 'xpStoreCatalog'));
+                if (catalogDoc.exists() && Array.isArray(catalogDoc.data().items) && catalogDoc.data().items.length > 0) {
+                  const items = catalogDoc.data().items
+                    .filter((item: any) => item.availability === 'active' || item.isActive !== false)
+                    .map((item: any) => ({
+                      ...item,
+                      title: item.title || item.name,
+                      name: item.name || item.title,
+                      costXP: Number(item.xpPrice || item.xpCost || item.costXP || item.priceXp || 100),
+                      priceXp: Number(item.priceXp || item.costXP || 100),
+                      perkType: item.perkType || item.category,
+                      category: item.category || item.perkType,
+                      perkGranted: item.perkGranted || item.perkDetails,
+                      perkDetails: item.perkDetails || item.perkGranted,
+                      isActive: true
+                    }));
+                  callback(items);
+                } else {
+                  callback([]);
+                }
+              } catch (e) {
+                console.warn('Fallback appSettings loading failed:', e);
+                callback([]);
+              }
             }
-          } catch (e) {
-            console.warn('Fallback xpStoreCatalog load warning:', e);
+          }, (err) => {
+            console.warn('Fallback snapshot listener error:', err);
             callback([]);
-          }
+          });
         }
       }, (err) => {
-        console.warn('subscribeXpStoreItems snapshot error:', err);
+        console.warn('subscribeXpStoreItems primary listener error, trying fallback:', err);
+        if (!isFallbackActive) {
+          isFallbackActive = true;
+          activeUnsubscribe = onSnapshot(fallbackCollectionRef, (fbSnapshot) => {
+            if (!fbSnapshot.empty) {
+              const items = mapDocs(fbSnapshot);
+              callback(items);
+            } else {
+              callback([]);
+            }
+          }, () => {
+            callback([]);
+          });
+        }
       });
 
-      return unsubscribe;
+      return () => {
+        unsubscribePrimary();
+        if (activeUnsubscribe) activeUnsubscribe();
+      };
     } catch (e) {
-      console.warn('subscribeXpStoreItems init error:', e);
+      console.warn('subscribeXpStoreItems overall subscription init error:', e);
       return () => {};
     }
   },

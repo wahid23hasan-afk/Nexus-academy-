@@ -25,13 +25,15 @@ import {
 import { CourseProgressInfo, LessonProgressInfo } from '../services/progressService';
 import { gamificationService, UserXP, DailyStreak, AchievementBadge } from '../services/gamificationService';
 import { soundFxService } from '../services/soundFxService';
-import { auth } from '../services/firebase';
+import { auth, db } from '../services/firebase';
 import { Course } from '../types/course';
+import { collection, onSnapshot, query } from 'firebase/firestore';
+import * as LucideIcons from 'lucide-react';
 
 export interface AchievementItem {
   id: string;
   title: string;
-  category: 'course' | 'lesson' | 'streak' | 'enrollment' | 'xp' | 'mastery';
+  category: 'course' | 'lesson' | 'streak' | 'enrollment' | 'xp' | 'mastery' | string;
   description: string;
   requirement: string;
   icon: React.ReactNode;
@@ -45,6 +47,16 @@ export interface AchievementItem {
   valueUnit: string;
   unlockedDate?: string;
 }
+
+const renderLucideIcon = (iconName: string, className?: string, size = 16) => {
+  if (!iconName) return React.createElement(LucideIcons.Award, { className, size });
+  
+  // Try matching direct or capitalized icon name
+  const IconComponent = (LucideIcons as any)[iconName] || 
+                        (LucideIcons as any)[iconName.charAt(0).toUpperCase() + iconName.slice(1)] || 
+                        LucideIcons.Award;
+  return React.createElement(IconComponent, { className, size });
+};
 
 interface AchievementTrackerProps {
   userProfile: any;
@@ -83,8 +95,55 @@ export function AchievementTracker({
   }, [selectedBadge]);
   const [remoteAchievements, setRemoteAchievements] = useState<AchievementBadge[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [dbMilestones, setDbMilestones] = useState<any[]>([]);
 
   const userId = auth.currentUser?.uid || userProfile?.uid || userProfile?.username || 'guest';
+
+  // Real-time listener for achievement badges / milestones
+  useEffect(() => {
+    try {
+      const q = query(collection(db, 'milestones'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const milestonesList: any[] = [];
+        snapshot.forEach((docSnap) => {
+          milestonesList.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        setDbMilestones(milestonesList);
+      }, (error) => {
+        console.warn('Real-time milestones snapshot error:', error);
+      });
+      return unsubscribe;
+    } catch (err) {
+      console.warn('Failed to listen to milestones:', err);
+    }
+  }, []);
+
+  // Fetch live XP, streak and achievements
+  useEffect(() => {
+    let isMounted = true;
+    const fetchGamification = async () => {
+      if (!auth.currentUser && !userProfile) return;
+      try {
+        const [xpData, streakData, achData] = await Promise.all([
+          gamificationService.getUserXP(userId),
+          gamificationService.getDailyStreak(userId),
+          gamificationService.getUserAchievements(userId)
+        ]);
+        if (isMounted) {
+          setUserXP(xpData);
+          setStreak(streakData);
+          setRemoteAchievements(achData);
+        }
+      } catch (err) {
+        console.warn('Silent achievement gamification fetch error:', err);
+      }
+    };
+
+    fetchGamification();
+    return () => {
+      isMounted = false;
+    };
+  }, [userId, userProfile]);
 
   // Handle sharing formatted achievement summary
   const handleShareAchievement = async (badge: AchievementItem, e?: React.MouseEvent) => {
@@ -124,33 +183,6 @@ export function AchievementTracker({
       onShowNotification?.('Failed to copy to clipboard', 'error');
     }
   };
-
-  // Fetch live XP, streak and achievements
-  useEffect(() => {
-    let isMounted = true;
-    const fetchGamification = async () => {
-      if (!auth.currentUser && !userProfile) return;
-      try {
-        const [xpData, streakData, achData] = await Promise.all([
-          gamificationService.getUserXP(userId),
-          gamificationService.getDailyStreak(userId),
-          gamificationService.getUserAchievements(userId)
-        ]);
-        if (isMounted) {
-          setUserXP(xpData);
-          setStreak(streakData);
-          setRemoteAchievements(achData);
-        }
-      } catch (err) {
-        console.warn('Silent achievement gamification fetch error:', err);
-      }
-    };
-
-    fetchGamification();
-    return () => {
-      isMounted = false;
-    };
-  }, [userId, userProfile]);
 
   // Compute calculated metrics
   const metrics = useMemo(() => {
@@ -193,141 +225,225 @@ export function AchievementTracker({
     };
   }, [userCourseProgressMap, userLessonProgressMap, enrolledCourseIds, streak, userXP]);
 
+  const { quizzesPassedCount, maxQuizScore } = useMemo(() => {
+    try {
+      const resultsKey = `nexus_quiz_all_results_${userId}`;
+      const allResults = JSON.parse(localStorage.getItem(resultsKey) || '[]');
+      const quizzesPassedCount = allResults.filter((r: any) => r.passed).length;
+      let maxScore = 0;
+      allResults.forEach((r: any) => {
+        if (r.percentage > maxScore) {
+          maxScore = r.percentage;
+        }
+      });
+      return { quizzesPassedCount, maxQuizScore: maxScore };
+    } catch (e) {
+      return { quizzesPassedCount: 0, maxQuizScore: 0 };
+    }
+  }, [userId]);
+
   // Define dynamic achievements list
   const achievements: AchievementItem[] = useMemo(() => {
-    const list: AchievementItem[] = [
-      {
-        id: 'first_lesson',
-        title: 'First Step',
-        category: 'lesson',
-        description: 'Completed your very first video lesson in any enrolled course.',
-        requirement: 'Complete 1 lesson',
-        icon: <Zap size={16} className="text-amber-400" />,
-        accentColor: '#F59E0B',
-        glowColor: 'rgba(245, 158, 11, 0.4)',
-        xpReward: 30,
-        isUnlocked: metrics.totalCompletedLessons >= 1,
-        progressPercent: Math.min(100, (metrics.totalCompletedLessons / 1) * 100),
-        currentValue: metrics.totalCompletedLessons,
-        targetValue: 1,
-        valueUnit: 'lesson'
-      },
-      {
-        id: 'halfway_hero',
-        title: 'Halfway Hero',
-        category: 'course',
-        description: 'Reached 50% completion or more in an academic course curriculum.',
-        requirement: 'Reach 50% course progress',
-        icon: <Target size={16} className="text-cyan-400" />,
-        accentColor: '#00F0FF',
-        glowColor: 'rgba(0, 240, 255, 0.4)',
-        xpReward: 60,
-        isUnlocked: metrics.maxCourseProgress >= 50,
-        progressPercent: Math.min(100, (metrics.maxCourseProgress / 50) * 100),
-        currentValue: Math.min(50, Math.round(metrics.maxCourseProgress)),
-        targetValue: 50,
-        valueUnit: '%'
-      },
-      {
-        id: 'course_completed_1',
-        title: 'Mastery Graduate',
-        category: 'mastery',
-        description: 'Successfully completed 100% of all lessons in an academic course.',
-        requirement: 'Complete 1 full course',
-        icon: <GraduationCap size={16} className="text-[#39FF14]" />,
-        accentColor: '#39FF14',
-        glowColor: 'rgba(57, 255, 20, 0.45)',
-        xpReward: 150,
-        isUnlocked: metrics.completedCoursesCount >= 1,
-        progressPercent: Math.min(100, (metrics.completedCoursesCount / 1) * 100),
-        currentValue: metrics.completedCoursesCount,
-        targetValue: 1,
-        valueUnit: 'course'
-      },
-      {
-        id: 'daily_scholar',
-        title: 'Study Flame',
-        category: 'streak',
-        description: 'Maintained a consecutive study streak of 3 active learning days.',
-        requirement: '3-day learning streak',
-        icon: <Flame size={16} className="text-orange-500" />,
-        accentColor: '#F97316',
-        glowColor: 'rgba(249, 115, 22, 0.4)',
-        xpReward: 50,
-        isUnlocked: metrics.currentStreakDays >= 3,
-        progressPercent: Math.min(100, (metrics.currentStreakDays / 3) * 100),
-        currentValue: metrics.currentStreakDays,
-        targetValue: 3,
-        valueUnit: 'days'
-      },
-      {
-        id: 'curator_enrolled',
-        title: 'Knowledge Seeker',
-        category: 'enrollment',
-        description: 'Enrolled in 2 or more diverse course specializations.',
-        requirement: 'Enroll in 2 courses',
-        icon: <BookOpen size={16} className="text-purple-400" />,
-        accentColor: '#A855F7',
-        glowColor: 'rgba(168, 85, 247, 0.4)',
-        xpReward: 40,
-        isUnlocked: metrics.totalEnrolled >= 2,
-        progressPercent: Math.min(100, (metrics.totalEnrolled / 2) * 100),
-        currentValue: metrics.totalEnrolled,
-        targetValue: 2,
-        valueUnit: 'courses'
-      },
-      {
-        id: 'lesson_master_5',
-        title: 'Speed Learner',
-        category: 'lesson',
-        description: 'Completed 5 total lessons across your study curriculums.',
-        requirement: 'Complete 5 lessons',
-        icon: <Sparkles size={16} className="text-emerald-400" />,
-        accentColor: '#10B981',
-        glowColor: 'rgba(16, 185, 129, 0.4)',
-        xpReward: 80,
-        isUnlocked: metrics.totalCompletedLessons >= 5,
-        progressPercent: Math.min(100, (metrics.totalCompletedLessons / 5) * 100),
-        currentValue: metrics.totalCompletedLessons,
-        targetValue: 5,
-        valueUnit: 'lessons'
-      },
-      {
-        id: 'century_xp',
-        title: 'Century Pioneer',
-        category: 'xp',
-        description: 'Accumulated over 100 XP through quizzes, lessons, and streaks.',
-        requirement: 'Earn 100+ Total XP',
-        icon: <Star size={16} className="text-yellow-400" />,
-        accentColor: '#EAB308',
-        glowColor: 'rgba(234, 179, 8, 0.4)',
-        xpReward: 100,
-        isUnlocked: metrics.totalXP >= 100,
-        progressPercent: Math.min(100, (metrics.totalXP / 100) * 100),
-        currentValue: metrics.totalXP,
-        targetValue: 100,
-        valueUnit: 'XP'
-      },
-      {
-        id: 'double_graduate',
-        title: 'Academic Elite',
-        category: 'mastery',
-        description: 'Completed 2 complete specialized certificate courses.',
-        requirement: 'Complete 2 full courses',
-        icon: <Trophy size={16} className="text-pink-400" />,
-        accentColor: '#EC4899',
-        glowColor: 'rgba(236, 72, 153, 0.4)',
-        xpReward: 300,
-        isUnlocked: metrics.completedCoursesCount >= 2,
-        progressPercent: Math.min(100, (metrics.completedCoursesCount / 2) * 100),
-        currentValue: metrics.completedCoursesCount,
-        targetValue: 2,
-        valueUnit: 'courses'
-      }
-    ];
+    if (!dbMilestones || dbMilestones.length === 0) {
+      const list: AchievementItem[] = [
+        {
+          id: 'first_lesson',
+          title: 'First Step',
+          category: 'lesson',
+          description: 'Completed your very first video lesson in any enrolled course.',
+          requirement: 'Complete 1 lesson',
+          icon: <Zap size={16} className="text-amber-400" />,
+          accentColor: '#F59E0B',
+          glowColor: 'rgba(245, 158, 11, 0.4)',
+          xpReward: 30,
+          isUnlocked: metrics.totalCompletedLessons >= 1,
+          progressPercent: Math.min(100, (metrics.totalCompletedLessons / 1) * 100),
+          currentValue: metrics.totalCompletedLessons,
+          targetValue: 1,
+          valueUnit: 'lesson'
+        },
+        {
+          id: 'halfway_hero',
+          title: 'Halfway Hero',
+          category: 'course',
+          description: 'Reached 50% completion or more in an academic course curriculum.',
+          requirement: 'Reach 50% course progress',
+          icon: <Target size={16} className="text-cyan-400" />,
+          accentColor: '#00F0FF',
+          glowColor: 'rgba(0, 240, 255, 0.4)',
+          xpReward: 60,
+          isUnlocked: metrics.maxCourseProgress >= 50,
+          progressPercent: Math.min(100, (metrics.maxCourseProgress / 50) * 100),
+          currentValue: Math.min(50, Math.round(metrics.maxCourseProgress)),
+          targetValue: 50,
+          valueUnit: '%'
+        },
+        {
+          id: 'course_completed_1',
+          title: 'Mastery Graduate',
+          category: 'mastery',
+          description: 'Successfully completed 100% of all lessons in an academic course.',
+          requirement: 'Complete 1 full course',
+          icon: <GraduationCap size={16} className="text-[#39FF14]" />,
+          accentColor: '#39FF14',
+          glowColor: 'rgba(57, 255, 20, 0.45)',
+          xpReward: 150,
+          isUnlocked: metrics.completedCoursesCount >= 1,
+          progressPercent: Math.min(100, (metrics.completedCoursesCount / 1) * 100),
+          currentValue: metrics.completedCoursesCount,
+          targetValue: 1,
+          valueUnit: 'course'
+        },
+        {
+          id: 'daily_scholar',
+          title: 'Study Flame',
+          category: 'streak',
+          description: 'Maintained a consecutive study streak of 3 active learning days.',
+          requirement: '3-day learning streak',
+          icon: <Flame size={16} className="text-orange-500" />,
+          accentColor: '#F97316',
+          glowColor: 'rgba(249, 115, 22, 0.4)',
+          xpReward: 50,
+          isUnlocked: metrics.currentStreakDays >= 3,
+          progressPercent: Math.min(100, (metrics.currentStreakDays / 3) * 100),
+          currentValue: metrics.currentStreakDays,
+          targetValue: 3,
+          valueUnit: 'days'
+        },
+        {
+          id: 'curator_enrolled',
+          title: 'Knowledge Seeker',
+          category: 'enrollment',
+          description: 'Enrolled in 2 or more diverse course specializations.',
+          requirement: 'Enroll in 2 courses',
+          icon: <BookOpen size={16} className="text-purple-400" />,
+          accentColor: '#A855F7',
+          glowColor: 'rgba(168, 85, 247, 0.4)',
+          xpReward: 40,
+          isUnlocked: metrics.totalEnrolled >= 2,
+          progressPercent: Math.min(100, (metrics.totalEnrolled / 2) * 100),
+          currentValue: metrics.totalEnrolled,
+          targetValue: 2,
+          valueUnit: 'courses'
+        },
+        {
+          id: 'lesson_master_5',
+          title: 'Speed Learner',
+          category: 'lesson',
+          description: 'Completed 5 total lessons across your study curriculums.',
+          requirement: 'Complete 5 lessons',
+          icon: <Sparkles size={16} className="text-emerald-400" />,
+          accentColor: '#10B981',
+          glowColor: 'rgba(16, 185, 129, 0.4)',
+          xpReward: 80,
+          isUnlocked: metrics.totalCompletedLessons >= 5,
+          progressPercent: Math.min(100, (metrics.totalCompletedLessons / 5) * 100),
+          currentValue: metrics.totalCompletedLessons,
+          targetValue: 5,
+          valueUnit: 'lessons'
+        },
+        {
+          id: 'century_xp',
+          title: 'Century Pioneer',
+          category: 'xp',
+          description: 'Accumulated over 100 XP through quizzes, lessons, and streaks.',
+          requirement: 'Earn 100+ Total XP',
+          icon: <Star size={16} className="text-yellow-400" />,
+          accentColor: '#EAB308',
+          glowColor: 'rgba(234, 179, 8, 0.4)',
+          xpReward: 100,
+          isUnlocked: metrics.totalXP >= 100,
+          progressPercent: Math.min(100, (metrics.totalXP / 100) * 100),
+          currentValue: metrics.totalXP,
+          targetValue: 100,
+          valueUnit: 'XP'
+        },
+        {
+          id: 'double_graduate',
+          title: 'Academic Elite',
+          category: 'mastery',
+          description: 'Completed 2 complete specialized certificate courses.',
+          requirement: 'Complete 2 full courses',
+          icon: <Trophy size={16} className="text-pink-400" />,
+          accentColor: '#EC4899',
+          glowColor: 'rgba(236, 72, 153, 0.4)',
+          xpReward: 300,
+          isUnlocked: metrics.completedCoursesCount >= 2,
+          progressPercent: Math.min(100, (metrics.completedCoursesCount / 2) * 100),
+          currentValue: metrics.completedCoursesCount,
+          targetValue: 2,
+          valueUnit: 'courses'
+        }
+      ];
+      return list;
+    }
 
-    return list;
-  }, [metrics]);
+    const colorMap: Record<string, { accent: string; glow: string }> = {
+      amber: { accent: '#F59E0B', glow: 'rgba(245, 158, 11, 0.4)' },
+      emerald: { accent: '#10B981', glow: 'rgba(16, 185, 129, 0.4)' },
+      blue: { accent: '#3B82F6', glow: 'rgba(59, 130, 246, 0.4)' },
+      purple: { accent: '#8B5CF6', glow: 'rgba(139, 92, 246, 0.4)' },
+      rose: { accent: '#F43F5E', glow: 'rgba(244, 63, 94, 0.4)' },
+      cyan: { accent: '#06B6D4', glow: 'rgba(6, 182, 212, 0.4)' },
+      orange: { accent: '#F97316', glow: 'rgba(249, 115, 22, 0.4)' },
+      green: { accent: '#10B981', glow: 'rgba(16, 185, 129, 0.4)' },
+      yellow: { accent: '#EAB308', glow: 'rgba(234, 179, 8, 0.4)' }
+    };
+
+    return dbMilestones.map((m: any) => {
+      let currentValue = 0;
+      const targetValue = Number(m.targetValue || m.valueTarget || 1);
+      let valueUnit = '';
+
+      switch (m.targetType) {
+        case 'videos_watched':
+          currentValue = metrics.totalCompletedLessons;
+          valueUnit = 'lessons';
+          break;
+        case 'quizzes_passed':
+          currentValue = quizzesPassedCount;
+          valueUnit = 'quizzes';
+          break;
+        case 'streak_days':
+          currentValue = metrics.currentStreakDays;
+          valueUnit = 'days';
+          break;
+        case 'courses_completed':
+          currentValue = metrics.completedCoursesCount;
+          valueUnit = 'courses';
+          break;
+        case 'score_achieved':
+          currentValue = maxQuizScore;
+          valueUnit = '%';
+          break;
+        default:
+          currentValue = 0;
+          valueUnit = '';
+      }
+
+      const progressPercent = Math.min(100, (currentValue / targetValue) * 100);
+      const isUnlocked = currentValue >= targetValue;
+
+      const colors = colorMap[m.color] || colorMap.amber;
+
+      return {
+        id: m.id || m.achievementId,
+        title: m.title || m.name || 'Badge',
+        category: (m.category || 'general') as any,
+        description: m.description || '',
+        requirement: `Reach ${targetValue} ${m.targetType?.replace('_', ' ') || ''}`,
+        icon: renderLucideIcon(m.icon, `text-${m.color}-400`),
+        accentColor: colors.accent,
+        glowColor: colors.glow,
+        xpReward: Number(m.xpReward || m.rewardXP || 50),
+        isUnlocked,
+        progressPercent,
+        currentValue,
+        targetValue,
+        valueUnit
+      };
+    }).sort((a: any, b: any) => (a.order || 0) - (b.order || 0) || a.title.localeCompare(b.title));
+  }, [dbMilestones, metrics, quizzesPassedCount, maxQuizScore]);
 
   const unlockedCount = achievements.filter((a) => a.isUnlocked).length;
   const totalCount = achievements.length;

@@ -47,6 +47,7 @@ export function MyCoursesView({
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [selectedCourseForRefund, setSelectedCourseForRefund] = useState<Course | null>(null);
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
 
   // Fetch classroom data
   const loadClassroomData = async (isRefreshed = false) => {
@@ -355,13 +356,20 @@ export function MyCoursesView({
               
               <div className="flex items-start space-x-4">
                 {/* Thumbnail */}
-                <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 border border-white/10 relative">
-                  <img 
-                    src={course.thumbnail?.trim() || undefined} 
-                    alt={course.title} 
-                    className="w-full h-full object-cover" 
-                    referrerPolicy="no-referrer"
-                  />
+                <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 border border-white/10 relative bg-slate-900 flex items-center justify-center">
+                  {!course.thumbnail?.trim() || imageErrors[course.courseId] ? (
+                    <GraduationCap size={24} className="text-[#39FF14]" />
+                  ) : (
+                    <img 
+                      src={course.thumbnail.trim()} 
+                      alt={course.title} 
+                      className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer"
+                      onError={() => {
+                        setImageErrors(prev => ({ ...prev, [course.courseId]: true }));
+                      }}
+                    />
+                  )}
                   {isFinished && (
                     <div className="absolute inset-0 bg-emerald-950/80 flex items-center justify-center">
                       <Award size={18} className="text-amber-400" />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import * as LucideIcons from 'lucide-react';
 import { 
   X, 
   ShoppingBag, 
@@ -27,6 +28,26 @@ import { gamificationService } from '../services/gamificationService';
 import { soundFxService } from '../services/soundFxService';
 import { db } from '../services/firebase';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+
+const renderStoreIcon = (iconName: string) => {
+  if (!iconName) return '✨';
+  
+  // If it's an emoji or very short, render it as-is
+  if (iconName.length <= 2) {
+    return iconName;
+  }
+  
+  // Try matching direct or capitalized icon name in Lucide
+  const IconComponent = (LucideIcons as any)[iconName] || 
+                        (LucideIcons as any)[iconName.charAt(0).toUpperCase() + iconName.slice(1)] || 
+                        null;
+  
+  if (IconComponent) {
+    return React.createElement(IconComponent, { size: 24, className: "text-amber-400" });
+  }
+  
+  return iconName; // Fallback to raw string if not a valid Lucide icon name
+};
 
 interface XpStoreModalProps {
   isOpen: boolean;
@@ -197,11 +218,28 @@ export function XpStoreModal({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
   const [liveUserXP, setLiveUserXP] = useState<number>(currentUserXP);
+  const [showHeader, setShowHeader] = useState<boolean>(true);
+  const [lastScrollTop, setLastScrollTop] = useState<number>(0);
 
   // Sync initial XP from prop
   useEffect(() => {
     setLiveUserXP(currentUserXP);
   }, [currentUserXP]);
+
+  // Handle scroll to hide/show header
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const scrollTop = e.currentTarget.scrollTop;
+    if (scrollTop <= 10) {
+      setShowHeader(true);
+    } else if (Math.abs(scrollTop - lastScrollTop) > 15) {
+      if (scrollTop > lastScrollTop && scrollTop > 40) {
+        setShowHeader(false);
+      } else {
+        setShowHeader(true);
+      }
+    }
+    setLastScrollTop(scrollTop);
+  };
 
   // 1. Real-time Subscription to XP Store Items Collection & Catalog
   useEffect(() => {
@@ -418,86 +456,99 @@ export function XpStoreModal({
             <X size={18} />
           </button>
 
-          {/* Modal Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-5 pr-8 sm:pr-0">
-            <div className="flex items-center space-x-3">
-              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-yellow-500/20 border border-amber-500/40 flex items-center justify-center shadow-lg shrink-0">
-                <ShoppingBag size={22} className="text-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
-              </div>
-              <div>
-                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider">
-                  <Sparkles size={11} />
-                  <span>Real-Time Perks Bazaar</span>
+          {/* Modal Header & Search Filter collapsing wrapper */}
+          <motion.div
+            animate={{ 
+              height: showHeader ? 'auto' : 0,
+              opacity: showHeader ? 1 : 0,
+              marginBottom: showHeader ? 16 : 0,
+              pointerEvents: showHeader ? 'auto' : 'none'
+            }}
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+            className="overflow-hidden flex flex-col shrink-0"
+          >
+            {/* Modal Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-5 pr-8 sm:pr-0">
+              <div className="flex items-center space-x-3">
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-yellow-500/20 border border-amber-500/40 flex items-center justify-center shadow-lg shrink-0">
+                  <ShoppingBag size={22} className="text-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
                 </div>
-                <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">XP Marketplace & Store</h2>
+                <div>
+                  <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider">
+                    <Sparkles size={11} />
+                    <span>Real-Time Perks Bazaar</span>
+                  </div>
+                  <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">XP Marketplace & Store</h2>
+                </div>
               </div>
-            </div>
 
-            {/* Live Student XP Badge */}
-            <div className="bg-white/[0.03] border border-amber-500/30 rounded-2xl px-3.5 py-2 flex items-center space-x-2.5 shrink-0 self-start sm:self-auto">
-              <div className="w-8 h-8 rounded-xl bg-[#39FF14]/10 border border-[#39FF14]/30 flex items-center justify-center text-[#39FF14]">
-                <Zap size={16} className="fill-[#39FF14]" />
-              </div>
-              <div>
-                <div className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Your Balance</div>
-                <div className="text-sm sm:text-base font-black font-mono text-[#39FF14] flex items-center space-x-1">
-                  <span>{liveUserXP.toLocaleString()} XP</span>
+              {/* Live Student XP Badge */}
+              <div className="bg-white/[0.03] border border-amber-500/30 rounded-2xl px-3.5 py-2 flex items-center space-x-2.5 shrink-0 self-start sm:self-auto">
+                <div className="w-8 h-8 rounded-xl bg-[#39FF14]/10 border border-[#39FF14]/30 flex items-center justify-center text-[#39FF14]">
+                  <Zap size={16} className="fill-[#39FF14]" />
+                </div>
+                <div>
+                  <div className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Your Balance</div>
+                  <div className="text-sm sm:text-base font-black font-mono text-[#39FF14] flex items-center space-x-1">
+                    <span>{liveUserXP.toLocaleString()} XP</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Search & Filter Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-4">
-            {/* Search Input */}
-            <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                id="xp-store-search-input"
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search frames, titles, passes..."
-                className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500/50 transition-colors"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
+            {/* Search & Filter Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-1">
+              {/* Search Input */}
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  id="xp-store-search-input"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search frames, titles, passes..."
+                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500/50 transition-colors"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
 
-            {/* Category Filter Pills */}
-            <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5">
-              {[
-                { id: 'all', label: 'All', icon: '🌟' },
-                { id: 'frame', label: 'Frames', icon: '✨' },
-                { id: 'title', label: 'Titles', icon: '🥷' },
-                { id: 'lesson_access', label: 'Passes', icon: '🔓' },
-                { id: 'shields_vip', label: 'VIP & Shields', icon: '🛡️' }
-              ].map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-mono font-bold whitespace-nowrap transition-all cursor-pointer flex items-center space-x-1.5 ${
-                    selectedCategory === cat.id
-                      ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                      : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5'
-                  }`}
-                >
-                  <span>{cat.icon}</span>
-                  <span>{cat.label}</span>
-                </button>
-              ))}
+              {/* Category Filter Pills */}
+              <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5">
+                {[
+                  { id: 'all', label: 'All', icon: '🌟' },
+                  { id: 'frame', label: 'Frames', icon: '✨' },
+                  { id: 'title', label: 'Titles', icon: '🥷' },
+                  { id: 'lesson_access', label: 'Passes', icon: '🔓' },
+                  { id: 'shields_vip', label: 'VIP & Shields', icon: '🛡️' }
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-mono font-bold whitespace-nowrap transition-all cursor-pointer flex items-center space-x-1.5 ${
+                      selectedCategory === cat.id
+                        ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
+                        : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5'
+                    }`}
+                  >
+                    <span>{cat.icon}</span>
+                    <span>{cat.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          </motion.div>
 
           {/* Items Grid */}
           <div 
             id="xp-store-items-container"
+            onScroll={handleScroll}
             className="overflow-y-auto pr-1 space-y-2.5 flex-1 custom-scrollbar"
           >
             {filteredItems.length === 0 ? (
@@ -542,7 +593,7 @@ export function XpStoreModal({
                           </div>
                         ) : (
                           <div className="w-12 h-12 rounded-xl bg-black/60 border border-white/10 flex items-center justify-center text-2xl">
-                            {item.icon || '✨'}
+                            {renderStoreIcon(item.icon)}
                           </div>
                         )}
                         

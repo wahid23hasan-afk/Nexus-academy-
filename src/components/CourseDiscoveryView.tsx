@@ -326,9 +326,10 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           }
         });
 
-        const [relations, userPurchases] = await Promise.all([
+        const [relations, userPurchases, allCourseTemplates] = await Promise.all([
           progressService.getUserMyCourses(uId, uEmail),
-          courseService.getUserPurchases(uId, uEmail)
+          courseService.getUserPurchases(uId, uEmail),
+          courseService.getCourses()
         ]);
 
         const approvedPurchaseIds = userPurchases
@@ -336,7 +337,11 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           .map(p => p.courseId);
 
         const progressIds = (relations || []).map(r => r.courseId);
-        const combinedApproved = Array.from(new Set([...approvedPurchaseIds, ...progressIds]));
+        const combinedApprovedRaw = Array.from(new Set([...approvedPurchaseIds, ...progressIds]));
+
+        // Filter out course IDs that don't actually exist as templates in our system anymore
+        const validCourseIds = (allCourseTemplates || []).map(c => c.courseId);
+        const combinedApproved = combinedApprovedRaw.filter(id => validCourseIds.includes(id));
 
         const pendingPurchaseIds = userPurchases
           .filter(p => p.status === 'pending' && !combinedApproved.includes(p.courseId))
