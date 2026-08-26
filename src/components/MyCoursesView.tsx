@@ -129,18 +129,36 @@ export function MyCoursesView({
 
     // Real-time Firestore onSnapshot listeners for instant sync of enrollments and courses
     let unsubPurchases: (() => void) | null = null;
+    let unsubPurchasesEmail: (() => void) | null = null;
     let unsubMyCourses: (() => void) | null = null;
+    let unsubMyCoursesEmail: (() => void) | null = null;
 
     try {
-      const qPurchases = query(collection(db, 'purchases'), where('userId', '==', userId));
-      unsubPurchases = onSnapshot(qPurchases, () => {
-        loadClassroomData(true);
-      });
+      const cleanEmail = userEmail ? userEmail.trim().toLowerCase() : '';
 
-      const qMyCourses = query(collection(db, 'myCourses'), where('userId', '==', userId));
-      unsubMyCourses = onSnapshot(qMyCourses, () => {
-        loadClassroomData(true);
-      });
+      if (userId) {
+        const qPurchases = query(collection(db, 'purchases'), where('userId', '==', userId));
+        unsubPurchases = onSnapshot(qPurchases, () => {
+          loadClassroomData(true);
+        }, (err) => console.warn('MyCourses purchases listener warning:', err));
+
+        const qMyCourses = query(collection(db, 'myCourses'), where('userId', '==', userId));
+        unsubMyCourses = onSnapshot(qMyCourses, () => {
+          loadClassroomData(true);
+        }, (err) => console.warn('MyCourses myCourses listener warning:', err));
+      }
+
+      if (cleanEmail && cleanEmail !== userId) {
+        const qPurchasesEmail = query(collection(db, 'purchases'), where('userEmail', '==', cleanEmail));
+        unsubPurchasesEmail = onSnapshot(qPurchasesEmail, () => {
+          loadClassroomData(true);
+        }, (err) => console.warn('MyCourses purchases email listener warning:', err));
+
+        const qMyCoursesEmail = query(collection(db, 'myCourses'), where('userEmail', '==', cleanEmail));
+        unsubMyCoursesEmail = onSnapshot(qMyCoursesEmail, () => {
+          loadClassroomData(true);
+        }, (err) => console.warn('MyCourses myCourses email listener warning:', err));
+      }
     } catch (err) {
       console.warn('Real-time listener setup notice in MyCoursesView:', err);
     }
@@ -148,7 +166,9 @@ export function MyCoursesView({
     return () => {
       window.removeEventListener('nexus_purchases_updated', handleUpdate);
       if (unsubPurchases) unsubPurchases();
+      if (unsubPurchasesEmail) unsubPurchasesEmail();
       if (unsubMyCourses) unsubMyCourses();
+      if (unsubMyCoursesEmail) unsubMyCoursesEmail();
     };
   }, [userId, userEmail]);
 

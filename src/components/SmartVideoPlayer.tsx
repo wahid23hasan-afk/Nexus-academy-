@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Hls from 'hls.js';
 import { 
   Play, 
   Pause, 
@@ -148,13 +149,22 @@ export function SmartVideoPlayer({
   const [useIframeFallback, setUseIframeFallback] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const bufferTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const stallTrackerRef = useRef<{ count: number; lastStall: number }>({ count: 0, lastStall: 0 });
 
   const triggerBuffering = useCallback((isBuffering: boolean) => {
     if (bufferTimerRef.current) {
       clearTimeout(bufferTimerRef.current);
       bufferTimerRef.current = null;
     }
-    setIsLoading(false);
+    if (isBuffering) {
+      // Show loading spinner ONLY during actual buffer stalls after 150ms debounce
+      bufferTimerRef.current = setTimeout(() => {
+        setIsLoading(true);
+      }, 150);
+    } else {
+      setIsLoading(false);
+    }
   }, []);
   const [showSpeedMenu, setShowSpeedMenu] = useState<boolean>(false);
   const [showQualityMenu, setShowQualityMenu] = useState<boolean>(false);
@@ -306,6 +316,111 @@ export function SmartVideoPlayer({
       isMounted = false;
     };
   }, [videoUrl]);
+
+  // Handle Network Fluctuation & Buffer Stall Adaptive Downscaling
+  const handleStallDetection = useCallback(() => {
+    const now = Date.now();
+    if (now - stallTrackerRef.current.lastStall > 25000) {
+      stallTrackerRef.current.count = 1;
+    } else {
+      stallTrackerRef.current.count += 1;
+    }
+    stallTrackerRef.current.lastStall = now;
+
+    // Check if connection is slow or fluctuating
+    const navConn = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+    const isSlowNetwork = navConn && (navConn.effectiveType === '2g' || navConn.effectiveType === '3g' || (navConn.downlink && navConn.downlink < 1.5));
+
+    // If 2 or more stalls occur in 25 seconds or slow network detected, prioritize stability over resolution
+    if (stallTrackerRef.current.count >= 2 || isSlowNetwork) {
+      if (hlsRef.current && hlsRef.current.currentLevel > 0) {
+        hlsRef.current.currentLevel = Math.max(0, hlsRef.current.currentLevel - 1);
+        setQualityNotice('⚡ Adaptive Streaming: Downscaled stream for stability');
+      } else {
+        const fallbackOption = QUALITY_OPTIONS.find(q => q.id === '480p') || QUALITY_OPTIONS[5];
+        if (quality !== fallbackOption.label) {
+          setQuality(fallbackOption.label);
+          const video = getVideoElement();
+          const prevTime = video ? video.currentTime : currentTime;
+          const wasPlaying = isPlaying || (video ? !video.paused : false);
+
+          const baseSourceUrl = processUrl(videoUrl);
+          const newTransformedUrl = getQualityTransformedUrl(baseSourceUrl, fallbackOption.id);
+          if (newTransformedUrl && newTransformedUrl !== activeUrl) {
+            setActiveUrl(newTransformedUrl);
+            if (video) {
+              video.src = newTransformedUrl;
+              const handleLoadedData = () => {
+                try {
+                  video.currentTime = prevTime;
+                  if (wasPlaying) video.play().catch(() => {});
+                } catch (e) {}
+                video.removeEventListener('loadeddata', handleLoadedData);
+              };
+              video.addEventListener('loadeddata', handleLoadedData);
+              video.load();
+            }
+          }
+          setQualityNotice('⚡ Adaptive Streaming: Switched to 480p due to network fluctuation');
+        }
+      }
+      stallTrackerRef.current.count = 0;
+    }
+  }, [quality, videoUrl, activeUrl, currentTime, isPlaying, getVideoElement]);
+
+  // HLS stream listener effect (.m3u8 support)
+  useEffect(() => {
+    const video = getVideoElement();
+    if (!video || !activeUrl) return;
+
+    const isHls = activeUrl.includes('.m3u8') || activeUrl.includes('/hls/');
+
+    if (isHls && Hls.isSupported()) {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+      }
+      const hls = new Hls({
+        capLevelToPlayerSize: true,
+        autoStartLoad: true
+      });
+      hlsRef.current = hls;
+      hls.loadSource(activeUrl);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+          triggerBuffering(true);
+          handleStallDetection();
+        }
+      });
+
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        triggerBuffering(false);
+      });
+
+      return () => {
+        hls.destroy();
+        hlsRef.current = null;
+      };
+    }
+  }, [activeUrl, getVideoElement, triggerBuffering, handleStallDetection]);
+
+  // Monitor network information changes
+  useEffect(() => {
+    const navConn = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+    if (!navConn) return;
+
+    const handleConnChange = () => {
+      if (navConn.effectiveType === '2g' || navConn.effectiveType === '3g' || (navConn.downlink && navConn.downlink < 1.5)) {
+        handleStallDetection();
+      }
+    };
+
+    navConn.addEventListener?.('change', handleConnChange);
+    return () => {
+      navConn.removeEventListener?.('change', handleConnChange);
+    };
+  }, [handleStallDetection]);
 
   // Handle Initial Seek safely when video metadata is ready
   useEffect(() => {
@@ -817,8 +932,14 @@ export function SmartVideoPlayer({
             onSeeked={() => {
               triggerBuffering(false);
             }}
-            onWaiting={() => triggerBuffering(true)}
-            onStalled={() => triggerBuffering(true)}
+            onWaiting={() => {
+              triggerBuffering(true);
+              handleStallDetection();
+            }}
+            onStalled={() => {
+              triggerBuffering(true);
+              handleStallDetection();
+            }}
             onPause={() => {
               setIsPlaying(false);
             }}

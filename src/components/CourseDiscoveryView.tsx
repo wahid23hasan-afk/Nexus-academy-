@@ -371,6 +371,45 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
 
     syncEnrollments();
 
+    let unsubP1: (() => void) | null = null;
+    let unsubP2: (() => void) | null = null;
+    let unsubMC1: (() => void) | null = null;
+    let unsubMC2: (() => void) | null = null;
+
+    if (auth.currentUser) {
+      const uId = auth.currentUser.uid;
+      const uEmail = auth.currentUser.email || userProfile?.username || '';
+      const cleanEmail = uEmail ? uEmail.trim().toLowerCase() : '';
+
+      try {
+        const qP1 = query(collection(db, 'purchases'), where('userId', '==', uId));
+        unsubP1 = onSnapshot(qP1, () => {
+          syncEnrollments();
+        }, (err) => console.warn('Realtime purchases listener warning:', err));
+
+        if (cleanEmail && cleanEmail !== uId) {
+          const qP2 = query(collection(db, 'purchases'), where('userEmail', '==', cleanEmail));
+          unsubP2 = onSnapshot(qP2, () => {
+            syncEnrollments();
+          }, (err) => console.warn('Realtime purchases email listener warning:', err));
+        }
+
+        const qMC1 = query(collection(db, 'myCourses'), where('userId', '==', uId));
+        unsubMC1 = onSnapshot(qMC1, () => {
+          syncEnrollments();
+        }, (err) => console.warn('Realtime myCourses listener warning:', err));
+
+        if (cleanEmail && cleanEmail !== uId) {
+          const qMC2 = query(collection(db, 'myCourses'), where('userEmail', '==', cleanEmail));
+          unsubMC2 = onSnapshot(qMC2, () => {
+            syncEnrollments();
+          }, (err) => console.warn('Realtime myCourses email listener warning:', err));
+        }
+      } catch (err) {
+        console.warn('Real-time listener setup notice in CourseDiscoveryView:', err);
+      }
+    }
+
     const handlePurchaseUpdate = () => {
       syncEnrollments();
       loadCourses();
@@ -379,6 +418,10 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
     window.addEventListener('nexus_purchases_updated', handlePurchaseUpdate);
     return () => {
       window.removeEventListener('nexus_purchases_updated', handlePurchaseUpdate);
+      if (unsubP1) unsubP1();
+      if (unsubP2) unsubP2();
+      if (unsubMC1) unsubMC1();
+      if (unsubMC2) unsubMC2();
     };
   }, [userProfile]);
 

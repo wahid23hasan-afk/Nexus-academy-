@@ -1508,7 +1508,17 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
   const handleApprove = async (purchaseId: string) => {
     setProcessingId(purchaseId);
     try {
-      await courseService.approvePurchase(purchaseId);
+      const res = await courseService.approvePurchase(purchaseId);
+      if (res && res.userId) {
+        await notificationService.adminSendNotification({
+          targetType: 'user',
+          targetIdentifier: res.userId,
+          title: 'Enrollment Approved! 🎉',
+          message: `Your course enrollment request has been approved by Admin! You can now access your course in My Courses.`,
+          type: 'Payment Success',
+          relatedPage: 'courses'
+        }).catch(e => console.warn('Silent notice sending approval notification:', e));
+      }
       onShowNotification('Enrollment approved! Student now has access.', 'success');
       loadAllData();
     } catch (err) {

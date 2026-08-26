@@ -78,6 +78,7 @@ export function PaymentView({
   // Prevent duplicate double submission state locks
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
+  const transactionMutexRef = useRef(false);
 
   // Platform Fee calculation
   const platformFee = finalPrice > 0 ? 20 : 0;
@@ -243,12 +244,16 @@ export function PaymentView({
 
   // Full Wallet Instant Enrollment (No Form / TrxID Needed!)
   const handleFullWalletInstantEnroll = async () => {
-    if (isSubmittingRef.current || isSubmitting) return;
+    if (transactionMutexRef.current || isSubmittingRef.current || isSubmitting) {
+      console.warn('Payment submission locked by transaction mutex.');
+      return;
+    }
     if (userWalletBalance < totalPayable) {
       onShowNotification(`Insufficient Wallet Balance (৳${userWalletBalance}). You need ৳${totalPayable}.`, 'error');
       return;
     }
 
+    transactionMutexRef.current = true;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setPhase('loading');
@@ -307,14 +312,17 @@ export function PaymentView({
       onShowNotification(err?.message || 'Wallet payment failed. Please try again.', 'error');
       setPhase('form');
     } finally {
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
+      setTimeout(() => {
+        transactionMutexRef.current = false;
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }, 1000);
     }
   };
 
   // Step 1 Proceed: Handles Gateway or Free Coupon
   const handleProceedToStep2 = () => {
-    if (isSubmittingRef.current || isSubmitting) return;
+    if (transactionMutexRef.current || isSubmittingRef.current || isSubmitting) return;
 
     // If 100% covered by wallet balance, trigger instant wallet enrollment
     if (isFullyCoveredByWallet) {
@@ -336,7 +344,10 @@ export function PaymentView({
 
   // Step 2: Final Submit for Hybrid or Full Gateway Payment
   const handleFinalSubmit = async (customTrxId?: string) => {
-    if (isSubmittingRef.current || isSubmitting) return;
+    if (transactionMutexRef.current || isSubmittingRef.current || isSubmitting) {
+      console.warn('Payment submission locked by transaction mutex.');
+      return;
+    }
 
     const finalTrxId = (customTrxId || userTrxId).trim().toUpperCase();
 
@@ -345,6 +356,7 @@ export function PaymentView({
       return;
     }
 
+    transactionMutexRef.current = true;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setPhase('loading');
@@ -421,8 +433,11 @@ export function PaymentView({
       setPhase('pending_approval');
       onShowNotification('Payment request submitted! Awaiting Admin Approval.', 'success');
     } finally {
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
+      setTimeout(() => {
+        transactionMutexRef.current = false;
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }, 1000);
     }
   };
 
