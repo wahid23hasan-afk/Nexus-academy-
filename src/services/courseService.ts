@@ -1742,6 +1742,31 @@ export const courseService = {
     walletUsed?: number;
     paidAmount?: number;
   }): Promise<{ purchaseId: string; transactionId: string }> {
+    // 0. Prevent duplicate submission: check if a pending request for same user & course exists recently
+    try {
+      const existingQuery = query(
+        collection(db, 'purchases'),
+        where('userId', '==', data.userId),
+        where('courseId', '==', data.courseId)
+      );
+      const snap = await getDocs(existingQuery);
+      const nowTime = Date.now();
+      const duplicateDoc = snap.docs.find(docSnap => {
+        const p = docSnap.data() as Purchase;
+        const sameTrx = data.transactionId && p.transactionId === data.transactionId.trim().toUpperCase();
+        const isRecent = Math.abs(nowTime - new Date(p.purchaseDate).getTime()) < 30000;
+        return (sameTrx || (p.status === 'pending' && isRecent));
+      });
+
+      if (duplicateDoc) {
+        const dup = duplicateDoc.data() as Purchase;
+        console.warn('Duplicate purchase submission blocked. Returning existing record:', dup.purchaseId);
+        return { purchaseId: dup.purchaseId, transactionId: dup.transactionId };
+      }
+    } catch (dupCheckErr) {
+      console.warn('Duplicate check warning:', dupCheckErr);
+    }
+
     const purchaseId = 'pur-' + Math.random().toString(36).substring(2, 11).toUpperCase();
     const transactionId = data.transactionId?.trim() || ('TXN-' + Math.random().toString(36).substring(2, 11).toUpperCase());
     const paymentId = 'pay-' + Math.random().toString(36).substring(2, 11).toUpperCase();

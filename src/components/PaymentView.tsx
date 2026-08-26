@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { 
   ChevronLeft, 
@@ -74,6 +74,10 @@ export function PaymentView({
   const [copiedAccount, setCopiedAccount] = useState(false);
   const [submittedWalletUsed, setSubmittedWalletUsed] = useState(0);
   const [submittedPaidAmount, setSubmittedPaidAmount] = useState(0);
+
+  // Prevent duplicate double submission state locks
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   // Platform Fee calculation
   const platformFee = finalPrice > 0 ? 20 : 0;
@@ -239,11 +243,14 @@ export function PaymentView({
 
   // Full Wallet Instant Enrollment (No Form / TrxID Needed!)
   const handleFullWalletInstantEnroll = async () => {
+    if (isSubmittingRef.current || isSubmitting) return;
     if (userWalletBalance < totalPayable) {
       onShowNotification(`Insufficient Wallet Balance (৳${userWalletBalance}). You need ৳${totalPayable}.`, 'error');
       return;
     }
 
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     setPhase('loading');
     try {
       const userId = auth.currentUser?.uid || userProfile?.username || 'anonymous_user';
@@ -299,11 +306,16 @@ export function PaymentView({
       console.error('Wallet instant payment error:', err);
       onShowNotification(err?.message || 'Wallet payment failed. Please try again.', 'error');
       setPhase('form');
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
   // Step 1 Proceed: Handles Gateway or Free Coupon
   const handleProceedToStep2 = () => {
+    if (isSubmittingRef.current || isSubmitting) return;
+
     // If 100% covered by wallet balance, trigger instant wallet enrollment
     if (isFullyCoveredByWallet) {
       handleFullWalletInstantEnroll();
@@ -324,6 +336,8 @@ export function PaymentView({
 
   // Step 2: Final Submit for Hybrid or Full Gateway Payment
   const handleFinalSubmit = async (customTrxId?: string) => {
+    if (isSubmittingRef.current || isSubmitting) return;
+
     const finalTrxId = (customTrxId || userTrxId).trim().toUpperCase();
 
     if (!finalTrxId && remainingPayable > 0 && selectedMethod?.type !== 'Coupon') {
@@ -331,6 +345,8 @@ export function PaymentView({
       return;
     }
 
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     setPhase('loading');
 
     try {
@@ -404,6 +420,9 @@ export function PaymentView({
       setSubmittedPaidAmount(remainingPayable);
       setPhase('pending_approval');
       onShowNotification('Payment request submitted! Awaiting Admin Approval.', 'success');
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -525,10 +544,11 @@ export function PaymentView({
         <footer className="mt-4 pt-3 border-t border-white/5 space-y-2 px-1 bg-[#0a0f1d]">
           <button
             onClick={() => handleFinalSubmit()}
-            className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-[#39FF14]/20 cursor-pointer"
+            disabled={isSubmitting}
+            className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-[#39FF14]/20 cursor-pointer"
           >
             <ShieldCheck size={16} />
-            <span>CONFIRM PAYMENT & SUBMIT ORDER</span>
+            <span>{isSubmitting ? 'PROCESSING ORDER...' : 'CONFIRM PAYMENT & SUBMIT ORDER'}</span>
           </button>
 
           <button
@@ -771,10 +791,11 @@ export function PaymentView({
             </div>
             <button
               onClick={handleFullWalletInstantEnroll}
-              className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg cursor-pointer"
+              disabled={isSubmitting}
+              className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg cursor-pointer"
             >
               <Sparkles size={16} />
-              <span>ওয়ালেট দিয়ে ইনস্ট্যান্ট এনরোল করুন (৳{totalPayable})</span>
+              <span>{isSubmitting ? 'প্রসেসিং হচ্ছে...' : `ওয়ালেট দিয়ে ইনস্ট্যান্ট এনরোল করুন (৳${totalPayable})`}</span>
             </button>
           </div>
         ) : (
@@ -1044,11 +1065,14 @@ export function PaymentView({
         <footer className="mt-4 pt-3 border-t border-white/5 space-y-2.5 px-1 bg-[#0a0f1d]">
           <button
             onClick={handleProceedToStep2}
-            className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-[#39FF14]/10 cursor-pointer"
+            disabled={isSubmitting}
+            className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-[#39FF14]/10 cursor-pointer"
           >
             <ShieldCheck size={14} />
             <span>
-              {totalPayable === 0 || selectedMethod?.type === 'Coupon'
+              {isSubmitting
+                ? 'Processing...'
+                : totalPayable === 0 || selectedMethod?.type === 'Coupon'
                 ? 'Confirm Free Enrollment'
                 : walletDeduction > 0
                 ? `Pay Remaining ৳${remainingPayable} & Continue`
