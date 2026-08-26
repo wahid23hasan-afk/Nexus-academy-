@@ -1,1 +1,1 @@
-export const ENABLE_EMAIL_VERIFICATION = false;
+export const ENABLE_EMAIL_VERIFICATION = true;

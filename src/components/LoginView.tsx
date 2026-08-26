@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, Eye, EyeOff, LogIn, ChevronLeft, AlertCircle, CheckCircle, Fingerprint, KeyRound, Send, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, LogIn, ChevronLeft, AlertCircle, CheckCircle, Fingerprint, KeyRound, Send, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { AppView, LoginFormErrors } from '../types/auth';
 import { authService } from '../services/authService';
+import { systemSettingsService, SystemSettings, DEFAULT_SYSTEM_SETTINGS } from '../services/systemSettingsService';
+import { useAuth } from '../context/AuthContext';
+import { db } from '../services/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface LoginViewProps {
   onNavigate: (view: AppView) => void;
@@ -15,6 +19,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
   onSetVerificationEmail,
   onShowNotification,
 }) => {
+  const { maintenanceMode } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -149,12 +154,36 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     try {
       const response = await authService.login(email, password);
-      setIsLoading(false);
 
       if (response.success && response.user) {
+        // Verify if system is currently in Maintenance Mode
+        const systemSettings = await systemSettingsService.getSystemSettings();
+        if (systemSettings.maintenanceMode || maintenanceMode) {
+          let userRole = 'student';
+          try {
+            const userDocSnap = await getDoc(doc(db, 'users', response.user.uid));
+            if (userDocSnap.exists()) {
+              userRole = userDocSnap.data()?.role || 'student';
+            }
+          } catch {}
+          const userEmail = (response.user.email || '').toLowerCase().trim();
+          const isRealAdmin = userRole === 'super_admin' || userRole === 'admin' || userEmail === 'wahid23hasan@gmail.com';
+
+          if (!isRealAdmin) {
+            await authService.logout();
+            setIsLoading(false);
+            const maintError = 'সিস্টেম রক্ষণাবেক্ষণ চলছে। পরবর্তীতে চেষ্টা করুন।';
+            setLoginError(maintError);
+            onShowNotification(maintError, 'error');
+            return;
+          }
+        }
+
+        setIsLoading(false);
         onShowNotification(`Welcome back, ${response.user.displayName || 'Scholar'}!`, 'success');
         setLoginError(null);
       } else {
+        setIsLoading(false);
         if (response.notVerified) {
           setUnverifiedEmail(email);
           setLoginError('Your email address has not been verified yet. Please verify your email before logging in.');
@@ -182,11 +211,35 @@ export const LoginView: React.FC<LoginViewProps> = ({
     
     try {
       const response = await authService.loginWithGoogle();
-      setIsLoading(false);
 
       if (response.success && response.user) {
+        // Verify if system is currently in Maintenance Mode
+        const systemSettings = await systemSettingsService.getSystemSettings();
+        if (systemSettings.maintenanceMode || maintenanceMode) {
+          let userRole = 'student';
+          try {
+            const userDocSnap = await getDoc(doc(db, 'users', response.user.uid));
+            if (userDocSnap.exists()) {
+              userRole = userDocSnap.data()?.role || 'student';
+            }
+          } catch {}
+          const userEmail = (response.user.email || '').toLowerCase().trim();
+          const isRealAdmin = userRole === 'super_admin' || userRole === 'admin' || userEmail === 'wahid23hasan@gmail.com';
+
+          if (!isRealAdmin) {
+            await authService.logout();
+            setIsLoading(false);
+            const maintError = 'সিস্টেম রক্ষণাবেক্ষণ চলছে। পরবর্তীতে চেষ্টা করুন।';
+            setLoginError(maintError);
+            onShowNotification(maintError, 'error');
+            return;
+          }
+        }
+
+        setIsLoading(false);
         onShowNotification(`Welcome, ${response.user.displayName || 'Scholar'}!`, 'success');
       } else {
+        setIsLoading(false);
         setLoginError(response.error || 'Google Sign-In failed.');
       }
     } catch (err: any) {
@@ -356,7 +409,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                         if (forgotError) setForgotError(null);
                       }}
                       placeholder="Enter your registered account email"
-                      className="w-full pl-12 pr-4 py-3.5 sm:py-4 min-h-[48px] glass-panel-light border border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04] rounded-xl text-base sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-sans"
+                      className="w-full pl-12 pr-4 py-3.5 sm:py-4 min-h-[48px] glass-panel-light border border-white/10 focus:border-[#39FF14] focus:bg-white/[0.04] neon-focus-glow rounded-xl text-base sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-sans"
                     />
                   </div>
                 </motion.div>
@@ -413,6 +466,28 @@ export const LoginView: React.FC<LoginViewProps> = ({
             onSubmit={handleSubmit}
             className="flex-1 flex flex-col justify-center my-6 space-y-4"
           >
+            {/* Maintenance Mode Prominent Warning Banner */}
+            <AnimatePresence>
+              {maintenanceMode && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.96 }}
+                  className="bg-amber-950/80 border-2 border-amber-500/60 rounded-2xl p-3.5 flex items-center space-x-3 text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.2)] animate-pulse"
+                >
+                  <ShieldAlert className="text-amber-400 shrink-0" size={20} />
+                  <div className="flex-1">
+                    <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-amber-300">
+                      Maintenance Mode Active - Admin Only Login
+                    </h4>
+                    <p className="text-[11px] text-amber-200/80 font-sans mt-0.5">
+                      সাধারণ শিক্ষার্থীদের লগইন সাময়িকভাবে বন্ধ রাখা হয়েছে।
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Unverified Email Warning Notification block */}
             <AnimatePresence>
               {loginError && (
@@ -469,7 +544,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   className={`
                     w-full pl-12 pr-4 py-3.5 sm:py-4 min-h-[48px] glass-panel-light border rounded-xl text-base sm:text-sm text-slate-100
                     placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
-                    ${errors.email ? 'border-red-500/40 focus:border-red-500 bg-red-500/[0.01]' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
+                    ${errors.email ? 'border-red-500/40 focus:border-red-500 bg-red-500/[0.01]' : 'border-white/10 focus:border-[#39FF14] neon-focus-glow focus:bg-white/[0.04]'}
                   `}
                 />
               </div>
@@ -518,7 +593,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   className={`
                     w-full pl-12 pr-14 py-3.5 sm:py-4 min-h-[48px] glass-panel-light border rounded-xl text-base sm:text-sm text-slate-100
                     placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
-                    ${errors.password ? 'border-red-500/40 focus:border-red-500 bg-red-500/[0.01]' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
+                    ${errors.password ? 'border-red-500/40 focus:border-red-500 bg-red-500/[0.01]' : 'border-white/10 focus:border-[#39FF14] neon-focus-glow focus:bg-white/[0.04]'}
                   `}
                 />
                 <button

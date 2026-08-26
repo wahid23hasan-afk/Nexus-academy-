@@ -11,10 +11,13 @@ import {
   addDoc,
   getDoc,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  onSnapshot,
+  increment
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { Course, Banner, Instructor, CurriculumChapter, CourseReview, CurriculumLesson, Coupon, Offer, CourseBenefit, Purchase, PaymentDetails, PaymentMethodConfig } from '../types/course';
+import { Course, CourseSection, Banner, Instructor, CurriculumChapter, CourseReview, CurriculumLesson, Coupon, Offer, CourseBenefit, Purchase, PaymentDetails, PaymentMethodConfig } from '../types/course';
+import { offlineStorageService } from './offlineStorageService';
 
 export enum OperationType {
   CREATE = 'create',
@@ -396,7 +399,7 @@ const MOCK_COURSES: Omit<Course, 'createdAt' | 'updatedAt'>[] = [
     discountPrice: 2499,
     rating: 4.9,
     reviewCount: 384,
-    students: 1240,
+    students: 0,
     language: 'Bangla',
     duration: '65 Hours',
     level: 'Intermediate',
@@ -428,7 +431,7 @@ const MOCK_COURSES: Omit<Course, 'createdAt' | 'updatedAt'>[] = [
     discountPrice: 1999,
     rating: 4.8,
     reviewCount: 212,
-    students: 830,
+    students: 0,
     language: 'English',
     duration: '32 Hours',
     level: 'All Levels',
@@ -459,7 +462,7 @@ const MOCK_COURSES: Omit<Course, 'createdAt' | 'updatedAt'>[] = [
     discountPrice: 3499,
     rating: 4.7,
     reviewCount: 120,
-    students: 450,
+    students: 0,
     language: 'Bangla',
     duration: '42 Hours',
     level: 'Beginner',
@@ -490,7 +493,7 @@ const MOCK_COURSES: Omit<Course, 'createdAt' | 'updatedAt'>[] = [
     discountPrice: 1499,
     rating: 4.9,
     reviewCount: 410,
-    students: 1100,
+    students: 0,
     language: 'Bangla',
     duration: '28 Hours',
     level: 'Beginner',
@@ -521,7 +524,7 @@ const MOCK_COURSES: Omit<Course, 'createdAt' | 'updatedAt'>[] = [
     discountPrice: 999,
     rating: 4.6,
     reviewCount: 512,
-    students: 2310,
+    students: 0,
     language: 'Bangla',
     duration: '18 Hours',
     level: 'All Levels',
@@ -552,7 +555,7 @@ const MOCK_COURSES: Omit<Course, 'createdAt' | 'updatedAt'>[] = [
     discountPrice: 1200,
     rating: 4.9,
     reviewCount: 615,
-    students: 3120,
+    students: 0,
     language: 'Bangla',
     duration: '80 Hours',
     level: 'Beginner',
@@ -583,7 +586,7 @@ const MOCK_COURSES: Omit<Course, 'createdAt' | 'updatedAt'>[] = [
     discountPrice: 1800,
     rating: 4.8,
     reviewCount: 340,
-    students: 1980,
+    students: 0,
     language: 'Bangla',
     duration: '110 Hours',
     level: 'Intermediate',
@@ -614,7 +617,7 @@ const MOCK_COURSES: Omit<Course, 'createdAt' | 'updatedAt'>[] = [
     discountPrice: 5999,
     rating: 4.9,
     reviewCount: 780,
-    students: 4400,
+    students: 0,
     language: 'Bangla',
     duration: '150 Hours',
     level: 'Advanced',
@@ -825,6 +828,84 @@ export const courseService = {
     }
   },
 
+  // Helper to aggregate real-time enrollment counts per courseId from purchases & myCourses & local storage
+  async getCourseStudentCountsMap(): Promise<Record<string, number>> {
+    const countMap: Record<string, Set<string>> = {};
+
+    const addEnrollment = (courseId: string, userKey: string) => {
+      if (!courseId) return;
+      if (!countMap[courseId]) countMap[courseId] = new Set();
+      countMap[courseId].add(userKey || 'anon_' + Math.random());
+    };
+
+    try {
+      const purchasesSnap = await getDocs(collection(db, 'purchases')).catch(() => null);
+      if (purchasesSnap && !purchasesSnap.empty) {
+        purchasesSnap.docs.forEach(d => {
+          const data = d.data();
+          if (data.courseId) {
+            addEnrollment(data.courseId, data.userId || data.userEmail || d.id);
+          }
+        });
+      }
+
+      const myCoursesSnap = await getDocs(collection(db, 'myCourses')).catch(() => null);
+      if (myCoursesSnap && !myCoursesSnap.empty) {
+        myCoursesSnap.docs.forEach(d => {
+          const data = d.data();
+          if (data.courseId) {
+            addEnrollment(data.courseId, data.userId || data.userEmail || d.id);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Failed getting Firestore enrollment snapshots:', e);
+    }
+
+    try {
+      const localPurchases: Purchase[] = JSON.parse(localStorage.getItem('nexus_db_purchases') || '[]');
+      localPurchases.forEach(p => {
+        if (p.courseId) addEnrollment(p.courseId, p.userId || p.userEmail || p.purchaseId);
+      });
+
+      const localMyCourses: any[] = JSON.parse(localStorage.getItem('nexus_my_courses') || '[]');
+      localMyCourses.forEach(m => {
+        if (m.courseId) addEnrollment(m.courseId, m.userId || m.userEmail || m.courseId);
+      });
+
+      const localEnrollments: string[] = JSON.parse(localStorage.getItem('nexus_enrollments') || '[]');
+      const currentUserKey = auth.currentUser?.uid || auth.currentUser?.email || 'current_user';
+      localEnrollments.forEach(cId => {
+        addEnrollment(cId, currentUserKey);
+      });
+    } catch (e) {}
+
+    const result: Record<string, number> = {};
+    Object.keys(countMap).forEach(cId => {
+      result[cId] = countMap[cId].size;
+    });
+    return result;
+  },
+
+  // Increment Course Student Count
+  async incrementCourseStudents(courseId: string): Promise<void> {
+    if (!courseId) return;
+    try {
+      const courseDocRef = doc(db, 'courses', courseId);
+      await updateDoc(courseDocRef, {
+        students: increment(1),
+        updatedAt: serverTimestamp()
+      }).catch(async () => {
+        await setDoc(courseDocRef, { students: 1 }, { merge: true }).catch(() => {});
+      });
+    } catch (err) {
+      console.warn('Failed to increment course students count:', err);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_purchases_updated'));
+    }
+  },
+
   // Fetch Courses with complete filtering and sorting support
   async getCourses(
     filters: {
@@ -870,13 +951,23 @@ export const courseService = {
             updatedAt: data.updatedAt
           } as Course;
         });
+        // Cache courses in IndexedDB for offline persistence
+        offlineStorageService.cacheCourses(courses).catch(console.warn);
       } else {
         courses = MOCK_COURSES.map(c => ({
           ...c,
           createdAt: { toDate: () => new Date() },
           updatedAt: { toDate: () => new Date() }
         })) as unknown as Course[];
+        offlineStorageService.cacheCourses(courses).catch(console.warn);
       }
+
+      // Enrich courses with real-time student count map
+      const countsMap = await this.getCourseStudentCountsMap();
+      courses = courses.map(c => ({
+        ...c,
+        students: countsMap[c.courseId] || 0
+      }));
 
       // Filter category
       if (filters.category && filters.category !== 'All') {
@@ -924,9 +1015,9 @@ export const courseService = {
           const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.isNew ? 2 : 1);
           return dateB - dateA;
         } else if (sortBy === 'popular') {
-          return b.students - a.students;
+          return (b.students || 0) - (a.students || 0);
         } else if (sortBy === 'rated') {
-          return b.rating - a.rating;
+          return (b.rating || 0) - (a.rating || 0);
         } else if (sortBy === 'priceAsc') {
           return priceA - priceB;
         } else if (sortBy === 'priceDesc') {
@@ -937,13 +1028,193 @@ export const courseService = {
 
       return courses;
     } catch (error) {
-      console.warn('Failed to fetch courses from Firestore, returning mock fallbacks:', error);
+      console.warn('Failed to fetch courses from Firestore, attempting IndexedDB offline cache:', error);
+      const cachedCourses = await offlineStorageService.getCachedCourses();
+      if (cachedCourses && cachedCourses.length > 0) {
+        let courses = [...cachedCourses];
+        if (filters.category && filters.category !== 'All') {
+          courses = courses.filter(c => c.category?.toLowerCase() === filters.category?.toLowerCase());
+        }
+        if (filters.searchQuery) {
+          const queryClean = filters.searchQuery.toLowerCase().trim();
+          courses = courses.filter(c => 
+            c.title?.toLowerCase().includes(queryClean) ||
+            c.instructor?.toLowerCase().includes(queryClean) ||
+            c.category?.toLowerCase().includes(queryClean)
+          );
+        }
+        return courses;
+      }
       return MOCK_COURSES.map(c => ({
         ...c,
         createdAt: { toDate: () => new Date() },
         updatedAt: { toDate: () => new Date() }
       })) as unknown as Course[];
     }
+  },
+
+  // Subscribe to live all-courses updates with onSnapshot for real-time student count and catalog sync
+  subscribeCourses(
+    filters: {
+      category?: string;
+      priceType?: 'all' | 'free' | 'premium';
+      isBestSeller?: boolean;
+      isNew?: boolean;
+      rating?: number;
+      searchQuery?: string;
+    } = {},
+    sortBy: 'newest' | 'popular' | 'rated' | 'priceAsc' | 'priceDesc' = 'popular',
+    onUpdate: (courses: Course[]) => void,
+    onError?: (err: any) => void
+  ) {
+    const coursesPath = 'courses';
+    const coursesCol = collection(db, coursesPath);
+    const purchasesCol = collection(db, 'purchases');
+
+    let currentRawCourses: Course[] = [];
+
+    const emitUpdatedCourses = async () => {
+      if (!currentRawCourses || currentRawCourses.length === 0) return;
+      const countsMap = await this.getCourseStudentCountsMap();
+      let courses = currentRawCourses.map(c => ({
+        ...c,
+        students: countsMap[c.courseId] || 0
+      }));
+
+      // Apply filters
+      if (filters.category && filters.category !== 'All') {
+        courses = courses.filter(c => c.category?.toLowerCase() === filters.category?.toLowerCase());
+      }
+
+      if (filters.priceType && filters.priceType !== 'all') {
+        if (filters.priceType === 'free') {
+          courses = courses.filter(c => (c.discountPrice || c.price) === 0);
+        } else if (filters.priceType === 'premium') {
+          courses = courses.filter(c => (c.discountPrice || c.price) > 0);
+        }
+      }
+
+      if (filters.isBestSeller) {
+        courses = courses.filter(c => c.isBestSeller);
+      }
+      if (filters.isNew) {
+        courses = courses.filter(c => c.isNew);
+      }
+      if (filters.rating) {
+        courses = courses.filter(c => (c.rating || 0) >= (filters.rating || 0));
+      }
+
+      if (filters.searchQuery) {
+        const queryClean = filters.searchQuery.toLowerCase().trim();
+        courses = courses.filter(c => 
+          c.title?.toLowerCase().includes(queryClean) ||
+          c.instructor?.toLowerCase().includes(queryClean) ||
+          c.category?.toLowerCase().includes(queryClean) ||
+          c.description?.toLowerCase().includes(queryClean)
+        );
+      }
+
+      // Apply sorting
+      courses.sort((a, b) => {
+        const priceA = a.discountPrice !== undefined ? a.discountPrice : a.price;
+        const priceB = b.discountPrice !== undefined ? b.discountPrice : b.price;
+
+        if (sortBy === 'newest') {
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.isNew ? 2 : 1);
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.isNew ? 2 : 1);
+          return dateB - dateA;
+        } else if (sortBy === 'popular') {
+          return (b.students || 0) - (a.students || 0);
+        } else if (sortBy === 'rated') {
+          return (b.rating || 0) - (a.rating || 0);
+        } else if (sortBy === 'priceAsc') {
+          return priceA - priceB;
+        } else if (sortBy === 'priceDesc') {
+          return priceB - priceA;
+        }
+        return 0;
+      });
+
+      // Cache fetched live courses in IndexedDB for offline persistence
+      offlineStorageService.cacheCourses(courses).catch(console.warn);
+
+      onUpdate(courses);
+    };
+
+    const unsubCourses = onSnapshot(
+      coursesCol,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          currentRawCourses = snapshot.docs.map(docSnap => {
+            const data = docSnap.data();
+            const learningOutcomes = Array.isArray(data.learningOutcomes)
+              ? data.learningOutcomes
+              : typeof data.learningOutcomes === 'string'
+                ? data.learningOutcomes.split('\n').flatMap(s => s.split(',')).map(s => s.trim()).filter(Boolean)
+                : [];
+            const skillsGained = Array.isArray(data.skillsGained)
+              ? data.skillsGained
+              : typeof data.skillsGained === 'string'
+                ? data.skillsGained.split(',').map(s => s.trim()).filter(Boolean)
+                : [];
+            const requirements = Array.isArray(data.requirements)
+              ? data.requirements
+              : typeof data.requirements === 'string'
+                ? data.requirements.split(',').map(s => s.trim()).filter(Boolean)
+                : [];
+            return {
+              ...data,
+              learningOutcomes,
+              skillsGained,
+              requirements,
+              courseId: docSnap.id,
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt
+            } as Course;
+          });
+        } else {
+          currentRawCourses = MOCK_COURSES.map(c => ({
+            ...c,
+            createdAt: { toDate: () => new Date() },
+            updatedAt: { toDate: () => new Date() }
+          })) as unknown as Course[];
+        }
+
+        emitUpdatedCourses();
+      },
+      (err) => {
+        console.warn('Firestore onSnapshot listen failed for courses, attempting IndexedDB offline cache:', err);
+        offlineStorageService.getCachedCourses().then((cached) => {
+          if (cached && cached.length > 0) {
+            onUpdate(cached);
+          }
+        }).catch(console.warn);
+        if (onError) onError(err);
+      }
+    );
+
+    const unsubPurchases = onSnapshot(
+      purchasesCol,
+      () => {
+        emitUpdatedCourses();
+      },
+      (err) => console.warn('Purchases subscription warning:', err)
+    );
+
+    const handleLocalUpdate = () => {
+      emitUpdatedCourses();
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('nexus_purchases_updated', handleLocalUpdate);
+    }
+
+    return () => {
+      unsubCourses();
+      unsubPurchases();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('nexus_purchases_updated', handleLocalUpdate);
+      }
+    };
   },
 
   // Fetch Single Instructor Details
@@ -962,9 +1233,68 @@ export const courseService = {
     }
   },
 
+  // Subscribe to live course updates with onSnapshot
+  subscribeCourse(courseId: string, onUpdate: (course: Course) => void, onError?: (err: any) => void) {
+    const courseDocRef = doc(db, 'courses', courseId);
+    return onSnapshot(
+      courseDocRef,
+      async (snap) => {
+        if (snap.exists()) {
+          const countsMap = await this.getCourseStudentCountsMap();
+          onUpdate({ ...snap.data(), courseId: snap.id, students: countsMap[snap.id] || 0 } as Course);
+        }
+      },
+      (err) => {
+        console.error('Firestore subscribeCourse error:', err);
+        handleFirestoreError(err, OperationType.GET, `courses/${courseId}`);
+        if (onError) onError(err);
+      }
+    );
+  },
+
+  // Update course sections in Firestore directly
+  async updateCourseSections(courseId: string, sections: CourseSection[]): Promise<void> {
+    try {
+      const courseDocRef = doc(db, 'courses', courseId);
+      await updateDoc(courseDocRef, {
+        sections,
+        updatedAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.error('Error updating course sections:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `courses/${courseId}`);
+    }
+  },
+
   // Fetch Course Curriculum
   async getCurriculum(courseId: string): Promise<CurriculumChapter[]> {
     try {
+      // 1. Check if course document in 'courses' collection has sections
+      const courseDocRef = doc(db, 'courses', courseId);
+      const courseSnap = await getDoc(courseDocRef);
+      if (courseSnap.exists()) {
+        const cData = courseSnap.data() as Course;
+        if (cData.sections && Array.isArray(cData.sections) && cData.sections.length > 0) {
+          return cData.sections.map((sec, sIdx) => ({
+            chapterId: sec.sectionId || sec.id || `chap-${sIdx + 1}`,
+            courseId,
+            title: sec.title,
+            sequenceOrder: sec.sequenceOrder || sIdx + 1,
+            lessons: (sec.lessons || []).map((les, lIdx) => ({
+              lessonId: les.lessonId || les.id || `les-${sIdx + 1}-${lIdx + 1}`,
+              chapterId: sec.sectionId || sec.id || `chap-${sIdx + 1}`,
+              title: les.title,
+              duration: les.duration || '12:30',
+              sequenceOrder: les.sequenceOrder || lIdx + 1,
+              isPreviewAllowed: les.isPreviewAllowed ?? les.isFreePreview,
+              videoUrl: les.videoUrl,
+              thumbnailUrl: les.thumbnailUrl
+            }))
+          }));
+        }
+      }
+
+      // 2. Query 'courseCurriculum' collection
       const q = query(collection(db, 'courseCurriculum'), where('courseId', '==', courseId));
       const snap = await getDocs(q);
       if (!snap.empty) {
@@ -979,14 +1309,38 @@ export const courseService = {
     }
   },
 
-  // Fetch Course Reviews
+  // Fetch Course Reviews from "reviews" collection
   async getReviews(courseId: string): Promise<CourseReview[]> {
     try {
-      const q = query(collection(db, 'courseReviews'), where('courseId', '==', courseId));
+      const q = query(collection(db, 'reviews'), where('courseId', '==', courseId));
       const snap = await getDocs(q);
       if (!snap.empty) {
-        return snap.docs.map(d => d.data() as CourseReview);
+        return snap.docs
+          .map(d => {
+            const data = d.data();
+            return {
+              reviewId: d.id,
+              courseId: data.courseId,
+              studentName: data.userName || data.studentName || data.userEmail || 'Verified Learner',
+              studentPhotoURL: data.studentPhotoURL || '',
+              rating: Number(data.rating || 5),
+              comment: data.comment || '',
+              createdAt: typeof data.createdAt === 'string'
+                ? new Date(data.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+                : (data.createdAt?.toDate ? data.createdAt.toDate().toLocaleDateString() : new Date().toLocaleDateString()),
+              status: data.status || 'approved'
+            } as CourseReview & { status?: string };
+          })
+          .filter(r => r.status !== 'hidden');
       }
+
+      // Legacy fallback check on 'courseReviews'
+      const legacyQ = query(collection(db, 'courseReviews'), where('courseId', '==', courseId));
+      const legacySnap = await getDocs(legacyQ);
+      if (!legacySnap.empty) {
+        return legacySnap.docs.map(d => d.data() as CourseReview);
+      }
+
       return generateMockReviewsForCourse(courseId);
     } catch (err) {
       console.warn(`Failed to fetch reviews for ${courseId}, returning mock fallback:`, err);
@@ -994,29 +1348,56 @@ export const courseService = {
     }
   },
 
-  // Submit/Add a Course Review and update average rating in the course doc
-  async addReview(review: Omit<CourseReview, 'reviewId' | 'createdAt'>): Promise<CourseReview> {
-    const reviewId = 'rev_' + Date.now() + Math.random().toString(36).substring(2, 6);
-    const newReview: CourseReview = {
-      ...review,
-      reviewId,
-      createdAt: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+  // Submit/Add a Course Review to "reviews" collection and update average rating in the course doc
+  async addReview(review: Omit<CourseReview, 'reviewId' | 'createdAt'> & {
+    courseTitle?: string;
+    userId?: string;
+    userName?: string;
+    userEmail?: string;
+    status?: string;
+    createdAt?: string;
+  }): Promise<CourseReview> {
+    const currentUser = auth.currentUser;
+    const createdAtIso = review.createdAt || new Date().toISOString();
+
+    const payload = {
+      courseId: review.courseId,
+      courseTitle: review.courseTitle || '',
+      userId: review.userId || currentUser?.uid || 'guest_student',
+      userName: review.userName || review.studentName || currentUser?.displayName || 'Verified Learner',
+      userEmail: review.userEmail || currentUser?.email || '',
+      rating: Number(review.rating) || 5,
+      comment: review.comment ? review.comment.trim() : '',
+      status: review.status || 'approved',
+      createdAt: createdAtIso
     };
 
+    let reviewId = '';
     try {
-      // 1. Write the new review doc to Firestore
-      await setDoc(doc(db, 'courseReviews', reviewId), newReview);
+      // 1. Write the new review doc to "reviews" collection with auto-generated document ID
+      const docRef = await addDoc(collection(db, 'reviews'), payload);
+      reviewId = docRef.id;
+
+      // Also set doc in legacy courseReviews for complete backwards compatibility
+      const legacyReview: CourseReview = {
+        ...review,
+        reviewId,
+        createdAt: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+      };
+      await setDoc(doc(db, 'courseReviews', reviewId), legacyReview);
 
       // 2. Fetch all reviews for this course to calculate the correct rating
-      const reviewsQuery = query(collection(db, 'courseReviews'), where('courseId', '==', review.courseId));
+      const reviewsQuery = query(collection(db, 'reviews'), where('courseId', '==', review.courseId));
       const snap = await getDocs(reviewsQuery);
       let totalRating = 0;
       let reviewCount = 0;
       
       snap.forEach(d => {
-        const data = d.data() as CourseReview;
-        totalRating += Number(data.rating || 0);
-        reviewCount++;
+        const data = d.data();
+        if (data.status !== 'hidden') {
+          totalRating += Number(data.rating || 0);
+          reviewCount++;
+        }
       });
 
       const averageRating = reviewCount > 0 ? Number((totalRating / reviewCount).toFixed(1)) : Number(review.rating.toFixed(1));
@@ -1032,11 +1413,27 @@ export const courseService = {
         });
       }
 
-      return newReview;
+      return {
+        reviewId,
+        courseId: review.courseId,
+        studentName: payload.userName,
+        studentPhotoURL: review.studentPhotoURL || '',
+        rating: payload.rating,
+        comment: payload.comment,
+        createdAt: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+      };
     } catch (err) {
-      console.error('Error adding course review:', err);
-      handleFirestoreError(err, OperationType.WRITE, 'courseReviews');
-      return newReview;
+      console.error('Error adding course review to reviews collection:', err);
+      handleFirestoreError(err, OperationType.WRITE, 'reviews');
+      return {
+        reviewId: reviewId || 'rev_' + Date.now(),
+        courseId: review.courseId,
+        studentName: payload.userName,
+        studentPhotoURL: review.studentPhotoURL || '',
+        rating: payload.rating,
+        comment: payload.comment,
+        createdAt: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+      };
     }
   },
 
@@ -1045,7 +1442,7 @@ export const courseService = {
     try {
       const snap = await getDocs(collection(db, 'coupons'));
       if (!snap.empty) {
-        return snap.docs.map(d => {
+        const list = snap.docs.map(d => {
           const data = d.data();
           return {
             couponId: d.id || data.couponId || 'coup-' + Math.random().toString(36).substring(2, 7),
@@ -1056,7 +1453,8 @@ export const courseService = {
             expiryDate: data.expiryDate || '2030-12-31',
             description: data.description || 'Promotional Discount'
           } as Coupon;
-        });
+        }).filter(c => c.isActive);
+        if (list.length > 0) return list;
       }
     } catch (err) {
       console.warn('Failed to fetch coupons from Firestore, checking fallback/mocks:', err);
@@ -1064,10 +1462,13 @@ export const courseService = {
     const local = localStorage.getItem('nexus_db_coupons');
     if (local) {
       try {
-        return JSON.parse(local);
+        const parsed = JSON.parse(local);
+        const filtered = parsed.filter((c: any) => c.isActive);
+        if (filtered.length > 0) return filtered;
       } catch { /* ignore */ }
     }
-    return MOCK_COUPONS;
+    // Return only active valid mock coupons without expired ones
+    return MOCK_COUPONS.filter(c => c.isActive && c.code !== 'EXPIRED10');
   },
 
   // Save/Add Coupon (Admin)
@@ -1336,13 +1737,18 @@ export const courseService = {
     discount: number;
     coupon: string;
     transactionId?: string;
-    status?: 'pending' | 'approved' | 'success' | 'rejected' | 'failed';
+    status?: 'pending' | 'approved' | 'active' | 'success' | 'rejected' | 'failed';
+    walletAmountUsed?: number;
+    walletUsed?: number;
+    paidAmount?: number;
   }): Promise<{ purchaseId: string; transactionId: string }> {
     const purchaseId = 'pur-' + Math.random().toString(36).substring(2, 11).toUpperCase();
     const transactionId = data.transactionId?.trim() || ('TXN-' + Math.random().toString(36).substring(2, 11).toUpperCase());
     const paymentId = 'pay-' + Math.random().toString(36).substring(2, 11).toUpperCase();
     const nowISO = new Date().toISOString();
     const status = data.status || 'pending';
+    const walletUsedVal = data.walletUsed !== undefined ? data.walletUsed : (data.walletAmountUsed || 0);
+    const paidAmountVal = data.paidAmount !== undefined ? data.paidAmount : Math.max(0, data.amount - walletUsedVal);
 
     const purchaseObj: Purchase = {
       purchaseId,
@@ -1357,7 +1763,10 @@ export const courseService = {
       coupon: data.coupon || '',
       status: status,
       transactionId,
-      purchaseDate: nowISO
+      purchaseDate: nowISO,
+      walletAmountUsed: walletUsedVal,
+      walletUsed: walletUsedVal,
+      paidAmount: paidAmountVal
     };
 
     const paymentObj: PaymentDetails = {
@@ -1384,6 +1793,15 @@ export const courseService = {
       await setDoc(doc(db, 'purchases', purchaseId), purchaseObj);
       await setDoc(doc(db, 'payments', paymentId), paymentObj);
       await setDoc(doc(db, 'transactions', transactionId), txnObj);
+
+      const courseDocRef = doc(db, 'courses', data.courseId);
+      await updateDoc(courseDocRef, {
+        students: increment(1),
+        updatedAt: serverTimestamp()
+      }).catch(async () => {
+        await setDoc(courseDocRef, { students: 1 }, { merge: true }).catch(() => {});
+      });
+
       console.log('Successfully written pending purchase to Firestore');
     } catch (err) {
       console.warn('Failed writing transaction to Firestore. Saving locally to localStorage...', err);
@@ -1569,6 +1987,18 @@ export const courseService = {
     localStorage.setItem('nexus_db_purchases', JSON.stringify(fallbackPurchases));
     localStorage.setItem('nexus_my_courses', JSON.stringify(fallbackMyCourses));
 
+    if (grantedCount > 0) {
+      try {
+        const courseDocRef = doc(db, 'courses', courseId);
+        await updateDoc(courseDocRef, {
+          students: increment(grantedCount),
+          updatedAt: serverTimestamp()
+        }).catch(e => console.warn('Silently skipped course student increment:', e));
+      } catch (e) {
+        console.warn('Failed to update student count on instant access:', e);
+      }
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('nexus_purchases_updated'));
     }
@@ -1637,6 +2067,66 @@ export const courseService = {
     const targetEmail = targetPurchase.userEmail ? targetPurchase.userEmail.trim().toLowerCase() : '';
     const nowISO = new Date().toISOString();
 
+    // Deduct wallet balance if combined purchase used wallet amount
+    const walletUsed = (targetPurchase as any).walletAmountUsed || 0;
+    if (walletUsed > 0) {
+      try {
+        const uRef = doc(db, 'users', targetPurchase.userId);
+        const uSnap = await getDoc(uRef);
+        let currentWallet = 0;
+        if (uSnap.exists()) {
+          currentWallet = uSnap.data().walletBalance || 0;
+        } else {
+          const allUsers = JSON.parse(localStorage.getItem('nexus_db_users') || '[]');
+          const foundU = allUsers.find((u: any) => u.uid === targetPurchase!.userId || u.username === targetPurchase!.userId);
+          if (foundU) currentWallet = foundU.walletBalance || 0;
+        }
+
+        const newWalletBalance = Math.max(0, currentWallet - walletUsed);
+        await updateDoc(uRef, {
+          walletBalance: newWalletBalance,
+          updatedAt: serverTimestamp()
+        }).catch(() => {});
+
+        const allUsers = JSON.parse(localStorage.getItem('nexus_db_users') || '[]');
+        const updatedUsers = allUsers.map((u: any) => {
+          if (u.uid === targetPurchase!.userId || u.username === targetPurchase!.userId) {
+            return { ...u, walletBalance: newWalletBalance };
+          }
+          return u;
+        });
+        localStorage.setItem('nexus_db_users', JSON.stringify(updatedUsers));
+
+        await addDoc(collection(db, 'walletTransactions'), {
+          userId: targetPurchase.userId,
+          type: 'debit',
+          category: 'course_purchase',
+          amount: walletUsed,
+          balanceAfter: newWalletBalance,
+          description: `Combined purchase approved (Wallet portion): ${targetPurchase.courseTitle || targetPurchase.courseId}`,
+          createdAt: nowISO
+        }).catch(() => {});
+
+        const fallbackWalletTx = JSON.parse(localStorage.getItem('nexus_wallet_transactions') || '[]');
+        fallbackWalletTx.push({
+          userId: targetPurchase.userId,
+          type: 'debit',
+          category: 'course_purchase',
+          amount: walletUsed,
+          balanceAfter: newWalletBalance,
+          description: `Combined purchase approved (Wallet portion): ${targetPurchase.courseTitle || targetPurchase.courseId}`,
+          createdAt: nowISO
+        });
+        localStorage.setItem('nexus_wallet_transactions', JSON.stringify(fallbackWalletTx));
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('nexus_wallet_updated', { detail: { newWallet: newWalletBalance } }));
+        }
+      } catch (err) {
+        console.warn('Failed deducting wallet balance on purchase approval:', err);
+      }
+    }
+
     // Sync myCourses document in Firestore
     const myCourseObj = {
       userId: targetPurchase.userId,
@@ -1655,6 +2145,13 @@ export const courseService = {
       if (targetEmail && targetEmail !== targetPurchase.userId) {
         await setDoc(doc(db, 'myCourses', `${targetEmail}_${targetPurchase.courseId}`), myCourseObj, { merge: true });
       }
+
+      // Increment real-time enrolled student count on the course document in Firestore
+      const courseDocRef = doc(db, 'courses', targetPurchase.courseId);
+      await updateDoc(courseDocRef, {
+        students: increment(1),
+        updatedAt: serverTimestamp()
+      }).catch(e => console.warn('Silently skipped course student increment:', e));
     } catch (e) {
       console.warn('Failed saving myCourses relation on purchase approval:', e);
     }
@@ -1694,10 +2191,15 @@ export const courseService = {
     return { userId: targetPurchase.userId, courseId: targetPurchase.courseId };
   },
 
-  // Admin Reject Purchase
+  // Admin Reject Purchase with Automatic Wallet Refund
   async rejectPurchase(purchaseId: string): Promise<void> {
+    let targetPurchase: Purchase | null = null;
     try {
       const pRef = doc(db, 'purchases', purchaseId);
+      const pSnap = await getDoc(pRef);
+      if (pSnap.exists()) {
+        targetPurchase = pSnap.data() as Purchase;
+      }
       await updateDoc(pRef, { status: 'rejected' });
     } catch (err) {
       console.warn('Failed updating Firestore purchase rejection:', err);
@@ -1706,11 +2208,104 @@ export const courseService = {
     const fallbackPurchases: Purchase[] = JSON.parse(localStorage.getItem('nexus_db_purchases') || '[]');
     const updated = fallbackPurchases.map(p => {
       if (p.purchaseId === purchaseId) {
+        if (!targetPurchase) targetPurchase = p;
         p.status = 'rejected';
       }
       return p;
     });
     localStorage.setItem('nexus_db_purchases', JSON.stringify(updated));
+
+    // Auto refund wallet amount if any wallet balance was used
+    const walletUsed = targetPurchase?.walletAmountUsed || targetPurchase?.walletUsed || 0;
+    const targetUserId = targetPurchase?.userId;
+    if (walletUsed > 0 && targetUserId) {
+      try {
+        const userDocRef = doc(db, 'users', targetUserId);
+        const userSnap = await getDoc(userDocRef);
+        let currentBal = 0;
+        if (userSnap.exists()) {
+          currentBal = Number(userSnap.data().walletBalance || userSnap.data().wallet || 0);
+        }
+        const newBal = currentBal + walletUsed;
+
+        await updateDoc(userDocRef, {
+          walletBalance: newBal,
+          updatedAt: serverTimestamp()
+        }).catch(async () => {
+          await setDoc(userDocRef, { walletBalance: newBal }, { merge: true });
+        });
+
+        await addDoc(collection(db, 'walletTransactions'), {
+          userId: targetUserId,
+          type: 'credit',
+          category: 'refund',
+          amount: walletUsed,
+          balanceAfter: newBal,
+          description: `Refund for rejected purchase: ${targetPurchase?.courseTitle || targetPurchase?.courseId || purchaseId}`,
+          createdAt: new Date().toISOString()
+        }).catch(() => {});
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('nexus_wallet_updated', { detail: { newWallet: newBal } }));
+        }
+      } catch (refundErr) {
+        console.error('Failed processing automatic wallet refund on rejection:', refundErr);
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_purchases_updated'));
+    }
+  },
+
+  // Admin Delete / Revoke Enrollment & Purchase across purchases, myCourses, and enrollments collections
+  async deleteEnrollment(params: { userId: string; courseId: string; purchaseId?: string }): Promise<void> {
+    const { userId, courseId, purchaseId } = params;
+    const cleanUserId = userId?.trim() || '';
+    const cleanCourseId = courseId?.trim() || '';
+
+    try {
+      if (purchaseId) {
+        await deleteDoc(doc(db, 'purchases', purchaseId)).catch(() => {});
+      }
+      if (cleanUserId && cleanCourseId) {
+        await deleteDoc(doc(db, 'myCourses', `${cleanUserId}_${cleanCourseId}`)).catch(() => {});
+        await deleteDoc(doc(db, 'enrollments', `${cleanUserId}_${cleanCourseId}`)).catch(() => {});
+        if (cleanUserId.includes('@')) {
+          const lowerEmail = cleanUserId.toLowerCase();
+          await deleteDoc(doc(db, 'myCourses', `${lowerEmail}_${cleanCourseId}`)).catch(() => {});
+          await deleteDoc(doc(db, 'enrollments', `${lowerEmail}_${cleanCourseId}`)).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn('Failed deleting Firestore documents on revoke enrollment:', err);
+    }
+
+    const fallbackPurchases: Purchase[] = JSON.parse(localStorage.getItem('nexus_db_purchases') || '[]');
+    const filteredPurchases = fallbackPurchases.filter(p => {
+      const matchId = purchaseId ? p.purchaseId === purchaseId : false;
+      const matchUserCourse = (p.userId === cleanUserId || p.userEmail?.toLowerCase() === cleanUserId.toLowerCase()) && p.courseId === cleanCourseId;
+      return !(matchId || matchUserCourse);
+    });
+    localStorage.setItem('nexus_db_purchases', JSON.stringify(filteredPurchases));
+
+    const fallbackMyCourses = JSON.parse(localStorage.getItem('nexus_my_courses') || '[]');
+    const filteredMyCourses = fallbackMyCourses.filter((m: any) => 
+      !((m.userId === cleanUserId || m.userEmail?.toLowerCase() === cleanUserId.toLowerCase()) && m.courseId === cleanCourseId)
+    );
+    localStorage.setItem('nexus_my_courses', JSON.stringify(filteredMyCourses));
+
+    const enrollKeys = [
+      `nexus_enrollments_${cleanUserId}`,
+      cleanUserId.includes('@') ? `nexus_enrollments_${cleanUserId.toLowerCase()}` : '',
+      'nexus_enrollments'
+    ].filter(Boolean);
+
+    enrollKeys.forEach(key => {
+      const currentArr: string[] = JSON.parse(localStorage.getItem(key) || '[]');
+      const updatedArr = currentArr.filter(id => id !== cleanCourseId);
+      localStorage.setItem(key, JSON.stringify(updatedArr));
+    });
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('nexus_purchases_updated'));

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, CreditCard, Clock, CheckCircle2, XCircle, RefreshCw, AlertTriangle, ArrowRight, Copy, Check, ShieldAlert, Receipt } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth } from '../services/firebase';
+import { auth, db } from '../services/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { courseService } from '../services/courseService';
 import { Purchase, Course } from '../types/course';
 
@@ -65,8 +66,21 @@ export const PaymentHistoryView: React.FC<PaymentHistoryViewProps> = ({
     };
 
     window.addEventListener('nexus_purchases_updated', handleUpdate);
+
+    const userId = auth.currentUser?.uid || userProfile?.username || 'guest_user';
+    let unsub: (() => void) | null = null;
+    try {
+      const q = query(collection(db, 'purchases'), where('userId', '==', userId));
+      unsub = onSnapshot(q, () => {
+        fetchUserPurchases();
+      });
+    } catch (err) {
+      console.warn('Real-time listener notice in PaymentHistoryView:', err);
+    }
+
     return () => {
       window.removeEventListener('nexus_purchases_updated', handleUpdate);
+      if (unsub) unsub();
     };
   }, [userProfile]);
 
@@ -281,9 +295,9 @@ export const PaymentHistoryView: React.FC<PaymentHistoryViewProps> = ({
 
                 {/* Course Details */}
                 <div className="mt-3 flex items-start space-x-3">
-                  {courseObj?.thumbnail ? (
+                  {courseObj?.thumbnail?.trim() ? (
                     <img 
-                      src={courseObj.thumbnail} 
+                      src={courseObj.thumbnail.trim()} 
                       alt={courseTitle} 
                       className="w-12 h-12 rounded-xl object-cover border border-white/10 shrink-0"
                     />

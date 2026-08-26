@@ -63,10 +63,11 @@ export const resourceService = {
           for (const type of typesForThisLesson) {
             const resourceId = `res_${courseId}_${lesson.lessonId}_${type}`;
             
+            const customAdminUrl = (lesson as any).notesUrl || (lesson as any).downloadUrl || (lesson as any).fileUrl;
             let downloadUrl = '#';
             let fileSize = '1.2 MB';
             if (type === 'pdf') {
-              downloadUrl = 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf';
+              downloadUrl = customAdminUrl || 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf';
               fileSize = '1.8 MB';
             } else if (type === 'zip') {
               downloadUrl = 'https://github.com/scandum/binary_search/archive/refs/heads/master.zip';
@@ -78,7 +79,7 @@ export const resourceService = {
               downloadUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
               fileSize = '6.8 MB';
             } else {
-              downloadUrl = 'https://google.com';
+              downloadUrl = customAdminUrl || 'https://google.com';
               fileSize = 'External Link';
             }
 
@@ -115,10 +116,9 @@ export const resourceService = {
               thumbnailUrl: type === 'image' ? downloadUrl : undefined
             };
 
-            await setDoc(doc(db, collName, resourceId), resource);
-            
-            // Also seed under lessonResources for compatibility
-            await setDoc(doc(db, 'lessonResources', resourceId), resource);
+            const seedPromises: Promise<any>[] = [];
+            seedPromises.push(setDoc(doc(db, collName, resourceId), resource).catch(() => {}));
+            seedPromises.push(setDoc(doc(db, 'lessonResources', resourceId), resource).catch(() => {}));
 
             seededResources.push(resource);
             resIndex++;

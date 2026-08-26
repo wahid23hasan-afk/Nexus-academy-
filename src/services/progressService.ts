@@ -39,6 +39,8 @@ export interface LessonProgressInfo {
   completed: boolean;
   watchedPercentage: number; // 0 - 100
   lastUpdated: string;
+  lastPositionSeconds?: number;
+  durationSeconds?: number;
 }
 
 export interface LearningHistoryEntry {
@@ -188,6 +190,28 @@ export const progressService = {
     return localLessonProg.filter((item: any) => item.userId === userId && item.courseId === courseId);
   },
 
+  // Get all lesson progress for a user across all courses
+  async getAllUserLessonProgresses(userId: string): Promise<LessonProgressInfo[]> {
+    if (!userId) return [];
+    try {
+      const q = query(
+        collection(db, 'lessonProgress'),
+        where('userId', '==', userId)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const results = snap.docs.map(d => d.data() as LessonProgressInfo);
+        localStorage.setItem('nexus_lesson_progress', JSON.stringify(results));
+        return results;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch all user lessonProgresses from Firestore, using local fallback:', err);
+    }
+
+    const localLessonProg = JSON.parse(localStorage.getItem('nexus_lesson_progress') || '[]');
+    return localLessonProg.filter((item: any) => item.userId === userId);
+  },
+
   // Update a single lesson progress and recalculate course progress percentage
   async updateLessonProgress(
     userId: string,
@@ -195,17 +219,28 @@ export const progressService = {
     lessonId: string,
     completed: boolean,
     watchedPercentage: number,
-    totalCourseLessonsCount = 10
+    totalCourseLessonsCount = 10,
+    lastPositionSeconds?: number,
+    durationSeconds?: number
   ): Promise<void> {
     const nowISO = new Date().toISOString();
+
+    // Preserve completed status if already marked completed
+    const localLessons = JSON.parse(localStorage.getItem('nexus_lesson_progress') || '[]');
+    const existingIdx = localLessons.findIndex((l: any) => l.userId === userId && l.courseId === courseId && l.lessonId === lessonId);
+    const isAlreadyCompleted = existingIdx > -1 && localLessons[existingIdx].completed;
+    const finalCompleted = completed || isAlreadyCompleted;
+    const finalWatchedPercentage = finalCompleted ? 100 : watchedPercentage;
 
     const lessonDoc: LessonProgressInfo = {
       userId,
       courseId,
       lessonId,
-      completed,
-      watchedPercentage,
-      lastUpdated: nowISO
+      completed: finalCompleted,
+      watchedPercentage: finalWatchedPercentage,
+      lastUpdated: nowISO,
+      ...(lastPositionSeconds !== undefined ? { lastPositionSeconds } : {}),
+      ...(durationSeconds !== undefined ? { durationSeconds } : {})
     };
 
     // 1. Write lesson progress to Firestore
@@ -216,10 +251,8 @@ export const progressService = {
     }
 
     // Update lesson progress in local storage
-    const localLessons = JSON.parse(localStorage.getItem('nexus_lesson_progress') || '[]');
-    const idx = localLessons.findIndex((l: any) => l.userId === userId && l.courseId === courseId && l.lessonId === lessonId);
-    if (idx > -1) {
-      localLessons[idx] = lessonDoc;
+    if (existingIdx > -1) {
+      localLessons[existingIdx] = lessonDoc;
     } else {
       localLessons.push(lessonDoc);
     }
@@ -292,6 +325,110 @@ export const progressService = {
     }
 
     // 3. Log a history event
+    await this.addLearningHistory(userId, courseId, lessonId, completed ? 'completed' : 'opened');
+  },
+
+  // Toggle or explicitly set lesson completion status
+  async setLessonCompletionStatus(
+    userId: string,
+    courseId: string,
+    lessonId: string,
+    completed: boolean,
+    totalCourseLessonsCount = 10
+  ): Promise<void> {
+    const nowISO = new Date().toISOString();
+
+    const lessonDoc: LessonProgressInfo = {
+      userId,
+      courseId,
+      lessonId,
+      completed,
+      watchedPercentage: completed ? 100 : 0,
+      lastUpdated: nowISO
+    };
+
+    // 1. Write to Firestore
+    try {
+      await setDoc(doc(db, 'lessonProgress', `${userId}_${courseId}_${lessonId}`), lessonDoc);
+    } catch (err) {
+      console.warn('Failed saving lesson toggle status to Firestore:', err);
+    }
+
+    // 2. Update local storage
+    const localLessons = JSON.parse(localStorage.getItem('nexus_lesson_progress') || '[]');
+    const idx = localLessons.findIndex((l: any) => l.userId === userId && l.courseId === courseId && l.lessonId === lessonId);
+    if (idx > -1) {
+      localLessons[idx] = lessonDoc;
+    } else {
+      localLessons.push(lessonDoc);
+    }
+    localStorage.setItem('nexus_lesson_progress', JSON.stringify(localLessons));
+
+    // 3. Recalculate course completion metrics
+    const lessonsForThisCourse = localLessons.filter((l: any) => l.userId === userId && l.courseId === courseId);
+    const completedCount = lessonsForThisCourse.filter((l: any) => l.completed).length;
+    const computedPercentage = Math.min(100, Math.round((completedCount / totalCourseLessonsCount) * 100));
+
+    const courseProgressDoc: CourseProgressInfo = {
+      userId,
+      courseId,
+      progressPercent: computedPercentage,
+      totalLessons: totalCourseLessonsCount,
+      completedLessons: completedCount,
+      lastOpenedDate: nowISO
+    };
+
+    try {
+      await setDoc(doc(db, 'courseProgress', `${userId}_${courseId}`), courseProgressDoc);
+    } catch (err) {
+      console.warn('Failed saving course progress to Firestore:', err);
+    }
+
+    const localCourseProg = JSON.parse(localStorage.getItem('nexus_course_progress') || '[]');
+    const cpIdx = localCourseProg.findIndex((item: any) => item.userId === userId && item.courseId === courseId);
+    if (cpIdx > -1) {
+      localCourseProg[cpIdx] = courseProgressDoc;
+    } else {
+      localCourseProg.push(courseProgressDoc);
+    }
+    localStorage.setItem('nexus_course_progress', JSON.stringify(localCourseProg));
+
+    // Update myCourses collection relation
+    const localMyCourses = JSON.parse(localStorage.getItem('nexus_my_courses') || '[]');
+    const myIdx = localMyCourses.findIndex((item: any) => item.userId === userId && item.courseId === courseId);
+    
+    let isCompleted = computedPercentage === 100;
+    let updatedRelation: MyCourseRelation;
+    if (myIdx > -1) {
+      updatedRelation = {
+        ...localMyCourses[myIdx],
+        lastOpenedDate: nowISO,
+        totalProgress: computedPercentage,
+        lastLessonId: lessonId,
+        isCompleted: isCompleted
+      };
+      localMyCourses[myIdx] = updatedRelation;
+    } else {
+      updatedRelation = {
+        userId,
+        courseId,
+        enrollmentDate: nowISO,
+        lastOpenedDate: nowISO,
+        totalProgress: computedPercentage,
+        lastLessonId: lessonId,
+        isCompleted: isCompleted
+      };
+      localMyCourses.push(updatedRelation);
+    }
+    localStorage.setItem('nexus_my_courses', JSON.stringify(localMyCourses));
+
+    try {
+      await setDoc(doc(db, 'myCourses', `${userId}_${courseId}`), updatedRelation);
+    } catch (err) {
+      console.warn('Failed saving myCourses relation to Firestore:', err);
+    }
+
+    // 4. Learning history
     await this.addLearningHistory(userId, courseId, lessonId, completed ? 'completed' : 'opened');
   },
 

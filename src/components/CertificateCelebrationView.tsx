@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Award, 
@@ -46,8 +47,15 @@ export function CertificateCelebrationView({
     setParticles(arr);
   }, []);
 
-  return (
-    <div className="fixed inset-0 z-50 bg-[#030712]/95 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto">
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] bg-[#030712]/95 backdrop-blur-xl flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-y-auto w-screen h-[100dvh] top-0 left-0">
       
       {/* Confetti canvas simulation inside view overlay */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -186,6 +194,7 @@ export function CertificateCelebrationView({
         </div>
 
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }

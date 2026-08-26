@@ -17,6 +17,7 @@ import {
   Zap,
   Check
 } from 'lucide-react';
+import { useStudyFeatures } from '../hooks/useStudyFeatures';
 
 interface Flashcard {
   id: string;
@@ -71,6 +72,7 @@ interface FlashcardsViewProps {
 }
 
 export function FlashcardsView({ onShowNotification }: FlashcardsViewProps) {
+  const { features, loading } = useStudyFeatures();
   const [decks, setDecks] = useState<Deck[]>(DEFAULT_DECKS);
   const [cardsMap, setCardsMap] = useState<Record<string, Flashcard[]>>(DEFAULT_CARDS);
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null);
@@ -88,6 +90,20 @@ export function FlashcardsView({ onShowNotification }: FlashcardsViewProps) {
   const [newAnswer, setNewAnswer] = useState<string>('');
   const [newHint, setNewHint] = useState<string>('');
   const [newDeckCategory, setNewDeckCategory] = useState<string>('HSC Science');
+
+  if (loading) return null;
+  if (!features.aiFlashcards) return <div className="p-8 text-center text-slate-500">Flashcard feature is currently disabled by admin.</div>;
+
+  useEffect(() => {
+    if (isNewModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isNewModalOpen]);
 
   const activeDeck = decks.find(d => d.id === activeDeckId);
   const activeCards = activeDeckId ? (cardsMap[activeDeckId] || []) : [];
@@ -407,12 +423,12 @@ export function FlashcardsView({ onShowNotification }: FlashcardsViewProps) {
       {/* Modal for Creating Custom Flashcard */}
       <AnimatePresence>
         {isNewModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="glass-panel max-w-md w-full p-6 rounded-2xl border border-white/10 space-y-5 relative bg-slate-900"
+              className="glass-panel max-w-md w-full p-5 sm:p-6 rounded-2xl border border-white/10 space-y-5 relative bg-slate-900 max-h-[88dvh] overflow-y-auto my-auto z-10"
             >
               <div className="flex items-center justify-between border-b border-white/10 pb-3">
                 <h3 className="text-sm font-bold text-white flex items-center space-x-2">

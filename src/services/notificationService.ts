@@ -15,7 +15,7 @@ import {
   onSnapshot,
   arrayUnion
 } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db, auth, sanitizeForFirestore } from './firebase';
 import { 
   Notification as DBNotification, 
   NotificationCategory, 
@@ -59,22 +59,189 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Default Seed Notifications (empty by default so only user/admin sent items appear)
-const DEFAULT_NOTIFICATIONS = (userId: string): Omit<DBNotification, 'notificationId' | 'createdAt'>[] => [];
+// Default Seed Notifications (starter alerts for new students)
+const DEFAULT_NOTIFICATIONS = (userId: string): DBNotification[] => [
+  {
+    notificationId: 'welcome_nexus_scholar',
+    userId: 'all',
+    title: '🎉 Welcome to Nexus Academy Workspace!',
+    message: 'Explore university-standard courses, interactive flashcards, collaborative study rooms, and live instructor sessions.',
+    type: 'General Announcement',
+    category: 'announcements',
+    unread: true,
+    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+    relatedPage: 'discover'
+  },
+  {
+    notificationId: 'academic_catalog_ready',
+    userId: 'all',
+    title: '📚 SSC, HSC & Admission Course Tracks Available',
+    message: 'Check out the newly updated curricula with lecture notes, quizzes, and certificates of completion.',
+    type: 'Course Update',
+    category: 'courses',
+    unread: true,
+    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+    relatedPage: 'discover'
+  }
+];
 
 // Default Seed Announcements (empty by default so only user/admin sent items appear)
 const DEFAULT_ANNOUNCEMENTS: Omit<Announcement, 'announcementId' | 'createdAt'>[] = [];
 
+// Module-level cache of latest Firestore notifications to prevent race-condition data loss
+let latestFirestoreNotifications: DBNotification[] = [];
+
+export function getSafeTimestamp(createdAtVal: any, fallbackId?: string): number {
+  if (createdAtVal !== null && createdAtVal !== undefined) {
+    if (typeof createdAtVal === 'number' && !isNaN(createdAtVal)) {
+      return createdAtVal;
+    }
+    if (typeof createdAtVal === 'string') {
+      const parsed = new Date(createdAtVal).getTime();
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+      const num = Number(createdAtVal);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    if (typeof createdAtVal === 'object') {
+      if (typeof createdAtVal.toDate === 'function') {
+        try {
+          const t = createdAtVal.toDate().getTime();
+          if (!isNaN(t) && t > 0) return t;
+        } catch (e) {}
+      }
+      if (typeof createdAtVal.seconds === 'number') {
+        return createdAtVal.seconds * 1000;
+      }
+      if (typeof createdAtVal._seconds === 'number') {
+        return createdAtVal._seconds * 1000;
+      }
+    }
+  }
+
+  if (fallbackId && typeof fallbackId === 'string') {
+    const match = fallbackId.match(/_(\d{10,13})(?:_|$)/);
+    if (match && match[1]) {
+      const ts = Number(match[1]);
+      if (!isNaN(ts) && ts > 0) return ts;
+    }
+  }
+
+  return 0;
+}
+
 export const notificationService = {
   /**
-   * Listen to user notifications in real-time.
-   * Receives notifications targeted to this userId, userEmail, or broadcasted to 'all'/'broadcast'.
-   * Seeds standard defaults if user has no notifications.
+   * Helper to retrieve locally tracked dismissed announcement IDs
    */
+  getLocalDismissedAnnouncements(): Set<string> {
+    try {
+      const raw = localStorage.getItem('nexus_dismissed_announcements');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return new Set(parsed);
+      }
+    } catch (e) {
+      console.warn('Error reading nexus_dismissed_announcements:', e);
+    }
+    return new Set<string>();
+  },
+
+  /**
+   * Helper to record dismissed announcement ID in localStorage
+   */
+  addLocalDismissedAnnouncement(announcementId: string) {
+    try {
+      const current = this.getLocalDismissedAnnouncements();
+      current.add(announcementId);
+      localStorage.setItem('nexus_dismissed_announcements', JSON.stringify(Array.from(current)));
+    } catch (e) {
+      console.warn('Error saving nexus_dismissed_announcements:', e);
+    }
+  },
+
+  /**
+   * Helper to retrieve locally tracked read notification IDs
+   */
+  getLocalReadIds(): Set<string> {
+    try {
+      const raw = localStorage.getItem('nexus_read_notif_ids');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return new Set(parsed);
+      }
+    } catch (e) {
+      console.warn('Error reading nexus_read_notif_ids:', e);
+    }
+    return new Set<string>();
+  },
+
+  /**
+   * Helper to record read notification IDs in localStorage
+   */
+  addLocalReadIds(ids: string[]) {
+    try {
+      const current = this.getLocalReadIds();
+      ids.forEach(id => current.add(id));
+      localStorage.setItem('nexus_read_notif_ids', JSON.stringify(Array.from(current)));
+    } catch (e) {
+      console.warn('Error saving nexus_read_notif_ids:', e);
+    }
+  },
+
+  /**
+   * Helper to retrieve deleted notification IDs
+   */
+  getLocalDeletedIds(): Set<string> {
+    try {
+      const raw = localStorage.getItem('nexus_deleted_notif_ids');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return new Set(parsed);
+      }
+    } catch (e) {
+      console.warn('Error reading nexus_deleted_notif_ids:', e);
+    }
+    return new Set<string>();
+  },
+
+  /**
+   * Helper to record deleted notification ID
+   */
+  addLocalDeletedId(id: string) {
+    try {
+      const current = this.getLocalDeletedIds();
+      current.add(id);
+      localStorage.setItem('nexus_deleted_notif_ids', JSON.stringify(Array.from(current)));
+    } catch (e) {
+      console.warn('Error saving nexus_deleted_notif_ids:', e);
+    }
+  },
+
+  /**
+   * Helper to sanitize and clean localStorage notifications cache
+   */
+  getCleanLocalNotifications(): DBNotification[] {
+    try {
+      const raw = localStorage.getItem('nexus_db_notifications');
+      if (!raw) return [];
+      const list = JSON.parse(raw);
+      if (!Array.isArray(list)) return [];
+      
+      // Filter out broken dummy items with missing title or message
+      const valid = list.filter((n: any) => n && typeof n === 'object' && n.notificationId && (n.title || n.message));
+      // Save back cleaned version if broken items were purged
+      if (valid.length !== list.length) {
+        localStorage.setItem('nexus_db_notifications', JSON.stringify(valid));
+      }
+      return valid;
+    } catch (e) {
+      return [];
+    }
+  },
+
   /**
    * Listen to user notifications in real-time.
    * Receives notifications targeted to this userId, userEmail, userName or broadcasted to 'all'/'broadcast'.
-   * Seeds standard defaults if user has no notifications.
    */
   listenToNotifications(userId: string, callback: (notifications: DBNotification[]) => void, userEmail?: string, userName?: string) {
     const collPath = 'notifications';
@@ -83,24 +250,49 @@ export const notificationService = {
       const currentEmail = (userEmail || auth.currentUser?.email || '').trim().toLowerCase();
       const currentUid = (userId || auth.currentUser?.uid || '').trim().toLowerCase();
       const currentName = (userName || auth.currentUser?.displayName || '').trim().toLowerCase();
+      const emailPrefix = currentEmail.includes('@') ? currentEmail.split('@')[0] : '';
+      const readIds = this.getLocalReadIds();
+      const deletedIds = this.getLocalDeletedIds();
 
       const filtered = allNotifs.filter((data) => {
+        if (!data || !data.notificationId) return false;
+        // Exclude locally deleted notifications
+        if (deletedIds.has(data.notificationId)) return false;
+        // Require at least a title or message
+        if (!data.title && !data.message) return false;
+
         const targetUser = (data.userId || '').trim().toLowerCase();
         const targetEmail = (data.userEmail || '').trim().toLowerCase();
+        const targetUserPrefix = targetUser.includes('@') ? targetUser.split('@')[0] : '';
+        const targetEmailPrefix = targetEmail.includes('@') ? targetEmail.split('@')[0] : '';
 
         // 1. Universal broadcasts
-        if (!targetUser || targetUser === 'all' || targetUser === 'broadcast') return true;
+        if (
+          !targetUser || 
+          targetUser === 'all' || 
+          targetUser === 'broadcast' || 
+          targetUser === 'everyone' || 
+          targetUser === 'all students' ||
+          (data as any).targetType === 'all'
+        ) {
+          return true;
+        }
 
         // 2. Direct UID match
         if (currentUid && currentUid !== 'guest_user' && targetUser === currentUid) return true;
 
-        // 3. Email match
+        // 3. Email match (exact)
         if (currentEmail && (targetEmail === currentEmail || targetUser === currentEmail)) return true;
 
-        // 4. Name / Username match
+        // 4. Email handle / prefix match (e.g. wahid23hasan matches wahid23hasan@gmail.com)
+        if (emailPrefix && (targetUser === emailPrefix || targetEmailPrefix === emailPrefix || targetUserPrefix === emailPrefix)) {
+          return true;
+        }
+
+        // 5. Name / Username match
         if (currentName && (targetUser === currentName || targetEmail === currentName)) return true;
 
-        // 5. Broad substring match (e.g. email prefix or username match)
+        // 6. Broad substring match (e.g. email prefix or username match)
         if (currentEmail && targetEmail && (currentEmail.includes(targetEmail) || targetEmail.includes(currentEmail))) return true;
 
         if (targetUser && (
@@ -108,6 +300,9 @@ export const notificationService = {
           (currentName && currentName.includes(targetUser)) ||
           (currentUid && currentUid.includes(targetUser))
         )) return true;
+
+        // 7. If guest user and notification is targeted to guest
+        if (currentUid === 'guest_user' && (targetUser === 'guest_user' || targetUser === 'guest')) return true;
 
         return false;
       });
@@ -121,53 +316,72 @@ export const notificationService = {
           currentUid,
           currentEmail,
           currentName,
+          emailPrefix,
           'guest_user',
           userId ? String(userId).trim().toLowerCase() : '',
           userEmail ? String(userEmail).trim().toLowerCase() : ''
         ].filter(Boolean)));
 
         const matchedInReadBy = myIdentifiers.some(id => readByArray.includes(id));
-        const isReadByMe = matchedInReadBy || data.unread === false;
+        const isLocallyMarkedRead = readIds.has(data.notificationId);
+        const isReadByMe = matchedInReadBy || isLocallyMarkedRead || data.unread === false;
 
         return {
           ...data,
           unread: !isReadByMe,
-          category: data.category || 'learning'
+          category: data.category || 'learning',
+          type: data.type || 'General Announcement'
         };
       });
     };
 
-    const emitMergedNotifications = (firestoreList: DBNotification[]) => {
-      const localNotifs: DBNotification[] = JSON.parse(localStorage.getItem('nexus_db_notifications') || '[]');
-      
+    const emitMergedNotifications = () => {
+      const localNotifs = this.getCleanLocalNotifications();
       const map = new Map<string, DBNotification>();
-      firestoreList.forEach(n => map.set(n.notificationId, { ...n }));
-
-      localNotifs.forEach(n => {
-        const existing = map.get(n.notificationId);
-        if (existing) {
-          const mergedReadBy = Array.from(new Set([...(existing.readBy || []), ...(n.readBy || [])]));
-          const isRead = existing.unread === false || n.unread === false;
-          map.set(n.notificationId, {
-            ...existing,
-            readBy: mergedReadBy,
-            unread: isRead ? false : existing.unread
-          });
-        } else {
+      
+      // 1. Add Firestore notifications
+      latestFirestoreNotifications.forEach(n => {
+        if (n && n.notificationId && (n.title || n.message)) {
           map.set(n.notificationId, { ...n });
         }
       });
 
+      // 2. Add local notifications (if created offline or locally)
+      localNotifs.forEach(n => {
+        if (n && n.notificationId && (n.title || n.message)) {
+          const existing = map.get(n.notificationId);
+          if (existing) {
+            const mergedReadBy = Array.from(new Set([...(existing.readBy || []), ...(n.readBy || [])]));
+            map.set(n.notificationId, {
+              ...existing,
+              ...n,
+              readBy: mergedReadBy
+            });
+          } else {
+            map.set(n.notificationId, { ...n });
+          }
+        }
+      });
+
+      // 3. If completely empty, seed default starter notifications
+      if (map.size === 0) {
+        DEFAULT_NOTIFICATIONS(userId).forEach(n => map.set(n.notificationId, n));
+      }
+
       const merged = Array.from(map.values());
       const filtered = getMatchingNotifications(merged);
-      filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      filtered.sort((a, b) => {
+        const tA = getSafeTimestamp(a.createdAt, a.notificationId);
+        const tB = getSafeTimestamp(b.createdAt, b.notificationId);
+        if (tB !== tA) return tB - tA;
+        return (b.notificationId || '').localeCompare(a.notificationId || '');
+      });
       callback(filtered);
     };
 
-    // Listen for local trigger updates
+    // Listen for local trigger updates (e.g. after marking read or creating alert)
     const handleLocalUpdate = () => {
-      const localNotifs: DBNotification[] = JSON.parse(localStorage.getItem('nexus_db_notifications') || '[]');
-      emitMergedNotifications(localNotifs);
+      emitMergedNotifications();
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('nexus_notifications_updated', handleLocalUpdate);
@@ -180,18 +394,24 @@ export const notificationService = {
         const list: DBNotification[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as DBNotification;
-          list.push({
-            ...data,
-            notificationId: data.notificationId || docSnap.id
-          });
+          if (data && (data.title || data.message)) {
+            list.push({
+              ...data,
+              notificationId: data.notificationId || docSnap.id
+            });
+          }
         });
-        emitMergedNotifications(list);
+        latestFirestoreNotifications = list;
+        emitMergedNotifications();
       },
       (error) => {
-        console.warn('Firestore onSnapshot notifications error, using local fallback:', error);
-        emitMergedNotifications([]);
+        console.warn('Firestore onSnapshot notifications notice:', error);
+        emitMergedNotifications();
       }
     );
+
+    // Initial emit with local/default data while Firestore is connecting
+    emitMergedNotifications();
 
     return () => {
       unsubscribe();
@@ -206,20 +426,41 @@ export const notificationService = {
    */
   listenToAnnouncements(callback: (announcements: Announcement[]) => void) {
     const collPath = 'announcements';
+    const currentUid = auth.currentUser?.uid;
+
+    if (currentUid && currentUid !== 'guest_user') {
+      this.getDismissedAnnouncements(currentUid).then(dismissed => {
+        if (Array.isArray(dismissed) && dismissed.length > 0) {
+          dismissed.forEach(id => this.addLocalDismissedAnnouncement(id));
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('nexus_announcements_updated'));
+          }
+        }
+      }).catch(() => {});
+    }
 
     const emitMergedAnnouncements = (firestoreList: Announcement[]) => {
       const localAnns: Announcement[] = JSON.parse(localStorage.getItem('nexus_db_announcements') || '[]');
+      const dismissed = this.getLocalDismissedAnnouncements();
+
       const map = new Map<string, Announcement>();
       firestoreList.forEach(a => {
-        if (a.isActive !== false) map.set(a.announcementId, a);
+        if (a && a.announcementId && a.isActive !== false && !dismissed.has(a.announcementId)) {
+          map.set(a.announcementId, a);
+        }
       });
       localAnns.forEach(a => {
-        if (a.isActive !== false && !map.has(a.announcementId)) {
+        if (a && a.announcementId && a.isActive !== false && !dismissed.has(a.announcementId) && !map.has(a.announcementId)) {
           map.set(a.announcementId, a);
         }
       });
       const merged = Array.from(map.values());
-      merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      merged.sort((a, b) => {
+        const tA = getSafeTimestamp(a.createdAt, a.announcementId);
+        const tB = getSafeTimestamp(b.createdAt, b.announcementId);
+        if (tB !== tA) return tB - tA;
+        return (b.announcementId || '').localeCompare(a.announcementId || '');
+      });
       callback(merged);
     };
 
@@ -238,7 +479,7 @@ export const notificationService = {
         const list: Announcement[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as Announcement;
-          if (data.isActive !== false) {
+          if (data && data.isActive !== false) {
             list.push({
               ...data,
               announcementId: data.announcementId || docSnap.id
@@ -283,13 +524,24 @@ export const notificationService = {
    * Add an announcement ID to user's dismissed announcements list in Firestore.
    */
   async dismissAnnouncement(userId: string, announcementId: string): Promise<void> {
+    if (!announcementId) return;
+
+    // Save locally immediately
+    this.addLocalDismissedAnnouncement(announcementId);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_announcements_updated'));
+      window.dispatchEvent(new Event('nexus_notifications_updated'));
+    }
+
     if (!userId || userId === 'guest_user') return;
+
     try {
       const docRef = doc(db, 'notificationSettings', userId);
-      await setDoc(docRef, {
+      await setDoc(docRef, sanitizeForFirestore({
         dismissedAnnouncements: arrayUnion(announcementId),
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     } catch (e) {
       console.warn('Failed to dismiss announcement in Firestore:', e);
     }
@@ -352,7 +604,6 @@ export const notificationService = {
    * Mark single notification as read.
    */
   async markAsRead(notificationId: string, userId?: string, userEmail?: string): Promise<void> {
-    const path = `notifications/${notificationId}`;
     const effectiveUid = userId || auth.currentUser?.uid || 'guest_user';
     const effectiveEmail = (userEmail || auth.currentUser?.email || '').trim().toLowerCase();
     const readByValues = Array.from(new Set([
@@ -362,6 +613,34 @@ export const notificationService = {
       effectiveEmail.toLowerCase(),
       'guest_user'
     ].filter(Boolean)));
+
+    // Record locally in read set
+    this.addLocalReadIds([notificationId]);
+
+    // Update in-memory cache if present
+    latestFirestoreNotifications = latestFirestoreNotifications.map(n => {
+      if (n.notificationId === notificationId) {
+        const mergedReadBy = Array.from(new Set([...(n.readBy || []), ...readByValues]));
+        return { ...n, unread: false, readBy: mergedReadBy };
+      }
+      return n;
+    });
+
+    // Update in localStorage cache if full notification exists
+    const localNotifs = this.getCleanLocalNotifications();
+    const updatedLocal = localNotifs.map(n => {
+      if (n.notificationId === notificationId) {
+        const mergedReadBy = Array.from(new Set([...(n.readBy || []), ...readByValues]));
+        return { ...n, unread: false, readBy: mergedReadBy };
+      }
+      return n;
+    });
+    localStorage.setItem('nexus_db_notifications', JSON.stringify(updatedLocal));
+
+    // Dispatch update for immediate UI refresh
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_notifications_updated'));
+    }
 
     try {
       const docRef = doc(db, 'notifications', notificationId);
@@ -378,32 +657,9 @@ export const notificationService = {
           updateFields.unread = false;
         }
         await updateDoc(docRef, updateFields);
-      } else {
-        await updateDoc(docRef, {
-          readBy: arrayUnion(...readByValues),
-          unread: false
-        });
       }
     } catch (error) {
-      console.warn('Failed updateDoc in markAsRead, using local fallback:', error);
-    }
-
-    // Local Storage fallback & instant cache sync
-    const fallbackNotifs: DBNotification[] = JSON.parse(localStorage.getItem('nexus_db_notifications') || '[]');
-    let target = fallbackNotifs.find(n => n.notificationId === notificationId);
-    if (!target) {
-      target = { notificationId, unread: false, readBy: readByValues } as DBNotification;
-      fallbackNotifs.push(target);
-    } else {
-      if (!Array.isArray(target.readBy)) target.readBy = [];
-      readByValues.forEach(v => {
-        if (!target.readBy!.includes(v)) target.readBy!.push(v);
-      });
-      target.unread = false;
-    }
-    localStorage.setItem('nexus_db_notifications', JSON.stringify(fallbackNotifs));
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('nexus_notifications_updated'));
+      console.warn('Failed updateDoc in markAsRead, handled locally:', error);
     }
   },
 
@@ -421,6 +677,36 @@ export const notificationService = {
       effectiveEmail.toLowerCase(),
       'guest_user'
     ].filter(Boolean)));
+
+    const idsToMark = notificationsToMark.map(item => typeof item === 'string' ? item : item.notificationId);
+
+    // Record locally in read set
+    this.addLocalReadIds(idsToMark);
+
+    // Update in-memory cache
+    latestFirestoreNotifications = latestFirestoreNotifications.map(n => {
+      if (idsToMark.includes(n.notificationId)) {
+        const mergedReadBy = Array.from(new Set([...(n.readBy || []), ...readByValues]));
+        return { ...n, unread: false, readBy: mergedReadBy };
+      }
+      return n;
+    });
+
+    // Update localStorage cache if full notifications exist (never injecting broken skeleton items)
+    const localNotifs = this.getCleanLocalNotifications();
+    const updatedLocal = localNotifs.map(n => {
+      if (idsToMark.includes(n.notificationId)) {
+        const mergedReadBy = Array.from(new Set([...(n.readBy || []), ...readByValues]));
+        return { ...n, unread: false, readBy: mergedReadBy };
+      }
+      return n;
+    });
+    localStorage.setItem('nexus_db_notifications', JSON.stringify(updatedLocal));
+
+    // Dispatch update for immediate UI refresh
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_notifications_updated'));
+    }
 
     try {
       const batch = writeBatch(db);
@@ -440,27 +726,7 @@ export const notificationService = {
       });
       await batch.commit();
     } catch (error) {
-      console.warn('Failed batch markAllAsRead in Firestore:', error);
-    }
-
-    // Local storage fallback & instant cache sync
-    const fallbackNotifs: DBNotification[] = JSON.parse(localStorage.getItem('nexus_db_notifications') || '[]');
-    notificationsToMark.forEach(item => {
-      const id = typeof item === 'string' ? item : item.notificationId;
-      let target = fallbackNotifs.find(n => n.notificationId === id);
-      if (!target) {
-        fallbackNotifs.push({ notificationId: id, unread: false, readBy: readByValues } as DBNotification);
-      } else {
-        if (!Array.isArray(target.readBy)) target.readBy = [];
-        readByValues.forEach(v => {
-          if (!target.readBy!.includes(v)) target.readBy!.push(v);
-        });
-        target.unread = false;
-      }
-    });
-    localStorage.setItem('nexus_db_notifications', JSON.stringify(fallbackNotifs));
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('nexus_notifications_updated'));
+      console.warn('Batch markAllAsRead in Firestore synced with local store:', error);
     }
   },
 
@@ -468,12 +734,27 @@ export const notificationService = {
    * Delete single notification.
    */
   async deleteNotification(notificationId: string): Promise<void> {
-    const path = `notifications/${notificationId}`;
+    // 1. Mark as locally deleted so it never re-appears
+    this.addLocalDeletedId(notificationId);
+
+    // 2. Remove from in-memory cache
+    latestFirestoreNotifications = latestFirestoreNotifications.filter(n => n.notificationId !== notificationId);
+
+    // 3. Remove from localStorage cache
+    const localNotifs = this.getCleanLocalNotifications();
+    const filteredLocal = localNotifs.filter(n => n.notificationId !== notificationId);
+    localStorage.setItem('nexus_db_notifications', JSON.stringify(filteredLocal));
+
+    // 4. Dispatch event
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('nexus_notifications_updated'));
+    }
+
     try {
       const docRef = doc(db, 'notifications', notificationId);
       await deleteDoc(docRef);
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.warn('Delete notification from Firestore notice:', error);
     }
   },
 
@@ -490,7 +771,7 @@ export const notificationService = {
         userId,
         createdAt: new Date().toISOString()
       };
-      await setDoc(doc(db, collPath, newId), newNotification);
+      await setDoc(doc(db, collPath, newId), sanitizeForFirestore(newNotification));
       return newNotification;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, collPath);
@@ -571,11 +852,14 @@ export const notificationService = {
 
     if (targetType === 'user' && targetIdentifier) {
       const cleanInput = targetIdentifier.trim();
-      if (cleanInput.includes('@')) {
-        targetEmail = cleanInput.toLowerCase();
-        targetUser = cleanInput;
+      const lower = cleanInput.toLowerCase();
+      if (lower === 'all' || lower === 'broadcast' || lower === 'everyone' || lower === 'all students') {
+        targetUser = 'all';
+      } else if (cleanInput.includes('@')) {
+        targetEmail = lower;
+        targetUser = lower;
       } else {
-        targetUser = cleanInput;
+        targetUser = lower;
       }
     }
 
@@ -590,11 +874,12 @@ export const notificationService = {
       unread: true,
       relatedPage,
       targetId,
-      createdAt: nowISO
-    };
+      createdAt: nowISO,
+      targetType: targetType
+    } as DBNotification;
 
     try {
-      await setDoc(doc(db, 'notifications', notifId), notifObj);
+      await setDoc(doc(db, 'notifications', notifId), sanitizeForFirestore(notifObj));
     } catch (err) {
       console.warn('Failed to save notification to Firestore, using local fallback:', err);
     }
@@ -622,7 +907,7 @@ export const notificationService = {
     };
 
     try {
-      await setDoc(doc(db, 'announcements', annId), newAnn);
+      await setDoc(doc(db, 'announcements', annId), sanitizeForFirestore(newAnn));
     } catch (err) {
       console.warn('Failed to save announcement to Firestore:', err);
     }
@@ -671,7 +956,12 @@ export const notificationService = {
           notificationId: data.notificationId || d.id
         });
       });
-      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      list.sort((a, b) => {
+        const tA = getSafeTimestamp(a.createdAt, a.notificationId);
+        const tB = getSafeTimestamp(b.createdAt, b.notificationId);
+        if (tB !== tA) return tB - tA;
+        return (b.notificationId || '').localeCompare(a.notificationId || '');
+      });
       return list;
     } catch (err) {
       console.warn('Failed fetching all notifications from Firestore:', err);
@@ -700,7 +990,12 @@ export const notificationService = {
       localAnns.forEach(a => { if (!map.has(a.announcementId)) map.set(a.announcementId, a); });
 
       const merged = Array.from(map.values());
-      merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      merged.sort((a, b) => {
+        const tA = getSafeTimestamp(a.createdAt, a.announcementId);
+        const tB = getSafeTimestamp(b.createdAt, b.announcementId);
+        if (tB !== tA) return tB - tA;
+        return (b.announcementId || '').localeCompare(a.announcementId || '');
+      });
       return merged;
     } catch (err) {
       console.warn('Failed fetching all announcements:', err);

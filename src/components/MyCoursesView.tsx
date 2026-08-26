@@ -18,7 +18,10 @@ import {
 import { Course } from '../types/course';
 import { progressService, MyCourseRelation } from '../services/progressService';
 import { courseService } from '../services/courseService';
-import { auth } from '../services/firebase';
+import { auth, db } from '../services/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { EliteLoading } from './EliteLoading';
+import { RefundRequestModal } from './RefundRequestModal';
 
 interface MyCoursesViewProps {
   userProfile: { fullName: string; username: string; photoURL?: string } | null;
@@ -42,6 +45,8 @@ export function MyCoursesView({
   const [courseRelations, setCourseRelations] = useState<MyCourseRelation[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
+  const [selectedCourseForRefund, setSelectedCourseForRefund] = useState<Course | null>(null);
 
   // Fetch classroom data
   const loadClassroomData = async (isRefreshed = false) => {
@@ -121,8 +126,29 @@ export function MyCoursesView({
     };
 
     window.addEventListener('nexus_purchases_updated', handleUpdate);
+
+    // Real-time Firestore onSnapshot listeners for instant sync of enrollments and courses
+    let unsubPurchases: (() => void) | null = null;
+    let unsubMyCourses: (() => void) | null = null;
+
+    try {
+      const qPurchases = query(collection(db, 'purchases'), where('userId', '==', userId));
+      unsubPurchases = onSnapshot(qPurchases, () => {
+        loadClassroomData(true);
+      });
+
+      const qMyCourses = query(collection(db, 'myCourses'), where('userId', '==', userId));
+      unsubMyCourses = onSnapshot(qMyCourses, () => {
+        loadClassroomData(true);
+      });
+    } catch (err) {
+      console.warn('Real-time listener setup notice in MyCoursesView:', err);
+    }
+
     return () => {
       window.removeEventListener('nexus_purchases_updated', handleUpdate);
+      if (unsubPurchases) unsubPurchases();
+      if (unsubMyCourses) unsubMyCourses();
     };
   }, [userId, userEmail]);
 
@@ -174,11 +200,10 @@ export function MyCoursesView({
   // ================= RENDER SKELETON LOADERS =================
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col space-y-4 px-1">
-        {[1, 2].map(i => (
-          <div key={i} className="w-full h-48 rounded-3xl bg-white/5 shimmer-effect" />
-        ))}
-      </div>
+      <EliteLoading 
+        label="SYNCHRONIZING MY CLASSROOM" 
+        subLabel="FETCHING ENROLLED COURSES & PROGRESS..." 
+      />
     );
   }
 
@@ -289,7 +314,19 @@ export function MyCoursesView({
               key={course.courseId}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              whileHover={{ scale: 1.01, y: -2 }}
+              whileHover={{ 
+                scale: [1, 1.018, 1.008, 1.018],
+                y: -3,
+                transition: {
+                  scale: {
+                    duration: 2.2,
+                    repeat: Infinity,
+                    repeatType: 'mirror',
+                    ease: 'easeInOut'
+                  },
+                  y: { duration: 0.2, ease: 'easeOut' }
+                }
+              }}
               onClick={() => onOpenCourse(course)}
               className="glass-panel-light hover-lift hover:border-[#39FF14]/30 rounded-3xl p-4.5 flex flex-col justify-between space-y-4 transition-all duration-300 relative overflow-hidden group cursor-pointer"
             >
@@ -300,7 +337,7 @@ export function MyCoursesView({
                 {/* Thumbnail */}
                 <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 border border-white/10 relative">
                   <img 
-                    src={course.thumbnail || undefined} 
+                    src={course.thumbnail?.trim() || undefined} 
                     alt={course.title} 
                     className="w-full h-full object-cover" 
                     referrerPolicy="no-referrer"
@@ -383,9 +420,33 @@ export function MyCoursesView({
                 </button>
               </div>
 
+              <button
+                onClick={() => {
+                  setSelectedCourseForRefund(course);
+                  setIsRefundModalOpen(true);
+                }}
+                className="text-rose-500 hover:text-rose-400 text-[9px] font-bold uppercase tracking-widest mt-1 block w-full text-center"
+              >
+                Request Refund (রিফান্ড আবেদন)
+              </button>
+
             </motion.div>
           );
         })}
+
+        {selectedCourseForRefund && (
+          <RefundRequestModal
+            isOpen={isRefundModalOpen}
+            onClose={() => {
+              setIsRefundModalOpen(false);
+              setSelectedCourseForRefund(null);
+            }}
+            courseId={selectedCourseForRefund.courseId}
+            courseTitle={selectedCourseForRefund.title}
+            amount={selectedCourseForRefund.price}
+            onShowNotification={onShowNotification}
+          />
+        )}
 
       </main>
 

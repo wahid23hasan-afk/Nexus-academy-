@@ -30,6 +30,66 @@ import { LiveClass, LiveAttendance, LiveChatMessage } from '../types/live';
 import { auth } from '../services/firebase';
 import { gamificationService } from '../services/gamificationService';
 
+/* ========================================================
+   CALENDAR EXPORT UTILITIES (Google Calendar & iCal .ics)
+   ======================================================== */
+const handleGoogleCalendar = (cls: LiveClass, e?: React.MouseEvent) => {
+  if (e) e.stopPropagation();
+  const title = encodeURIComponent(`🔴 Live Class: ${cls.title}`);
+  const details = encodeURIComponent(
+    `Live Lecture: ${cls.title}\n` +
+    `Subject: ${cls.subject || 'Academic Track'}\n` +
+    `Instructor: ${cls.instructor || 'Faculty Lead'}\n` +
+    `Description: ${cls.description || ''}\n\n` +
+    `Join classroom in Nexus Academy App!`
+  );
+  const location = encodeURIComponent('Nexus Academy Live Classroom');
+  const start = new Date(cls.startTime);
+  const end = new Date(start.getTime() + (cls.duration || 60) * 60 * 1000);
+
+  const formatISO = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, '');
+  const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${formatISO(start)}/${formatISO(end)}&details=${details}&location=${location}`;
+  window.open(gcalUrl, '_blank', 'noopener,noreferrer');
+};
+
+const handleDownloadIcs = (cls: LiveClass, e?: React.MouseEvent) => {
+  if (e) e.stopPropagation();
+  const start = new Date(cls.startTime);
+  const end = new Date(start.getTime() + (cls.duration || 60) * 60 * 1000);
+  const formatISO = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, '');
+
+  const cleanTitle = (cls.title || 'Live Class').replace(/[^\w\s-]/gi, '');
+  const cleanDesc = (cls.description || '').replace(/\n/g, ' ');
+
+  const icsLines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//NexusAcademy//LiveClasses//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `SUMMARY:${cls.title}`,
+    `DESCRIPTION:${cleanDesc} | Instructor: ${cls.instructor}`,
+    `LOCATION:Nexus Academy Live Classroom`,
+    `DTSTART:${formatISO(start)}`,
+    `DTEND:${formatISO(end)}`,
+    'STATUS:CONFIRMED',
+    `UID:liveclass_${cls.classId || Date.now()}@nexus.edu`,
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ];
+
+  const blob = new Blob([icsLines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `${cleanTitle.toLowerCase().replace(/\s+/g, '_')}_reminder.ics`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 interface LiveClassesViewProps {
   userProfile: any;
   purchasedCourseIds: string[];
@@ -84,6 +144,29 @@ export function LiveClassesView({
 
   useEffect(() => {
     loadClasses();
+
+    // Subscribe to real-time live classes updates from Firestore
+    const unsubscribe = liveService.listenToLiveClasses((liveData) => {
+      if (liveData && liveData.length > 0) {
+        setClasses(liveData);
+        setLoading(false);
+      }
+    });
+
+    const handleCustomEvent = () => {
+      loadClasses(true);
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('nexus_live_class_updated', handleCustomEvent);
+    }
+
+    return () => {
+      unsubscribe();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('nexus_live_class_updated', handleCustomEvent);
+      }
+    };
   }, [userId]);
 
   const handlePullToRefresh = () => {
@@ -260,8 +343,8 @@ export function LiveClassesView({
                       <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
                         <div className="flex items-center space-x-2">
                           <div className="w-6 h-6 rounded-full bg-slate-800 overflow-hidden border border-white/10">
-                            {cls.instructorPhoto ? (
-                              <img src={cls.instructorPhoto || undefined} alt={cls.instructor} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            {cls.instructorPhoto?.trim() ? (
+                              <img src={cls.instructorPhoto.trim()} alt={cls.instructor} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
                               <User size={12} className="text-slate-400 m-1" />
                             )}
@@ -295,8 +378,31 @@ export function LiveClassesView({
                             <span>Watch Stream Recording</span>
                           </button>
                         ) : (
-                          <div className="w-full py-2 bg-white/[0.01] border border-white/5 text-slate-500 text-center text-[9px] font-mono uppercase tracking-widest rounded-xl">
-                            Awaiting Stream Schedule
+                          <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={(e) => {
+                                  handleGoogleCalendar(cls, e);
+                                  onShowNotification('Opening Google Calendar event...', 'success');
+                                }}
+                                className="flex-1 py-1.5 bg-[#39FF14]/10 hover:bg-[#39FF14]/20 border border-[#39FF14]/30 text-[#39FF14] text-[9.5px] font-mono font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
+                                title="Add event to Google Calendar"
+                              >
+                                <Calendar size={11} />
+                                <span>Add to Calendar</span>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  handleDownloadIcs(cls, e);
+                                  onShowNotification('Downloaded .ics event file!', 'success');
+                                }}
+                                className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-[9.5px] font-mono font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
+                                title="Download .ics file for Apple / Outlook / Mobile Calendar"
+                              >
+                                <Download size={11} />
+                                <span>iCal</span>
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -334,7 +440,7 @@ export function LiveClassesView({
                 setInWorkspace(true);
                 if (auth.currentUser) {
                   gamificationService.addXP(auth.currentUser.uid, 50, 'Joined Live Class');
-                  gamificationService.unlockAchievement(auth.currentUser.uid, 'live_regular', 'Live Class Regular', 'Attended a live class', '📹');
+                  gamificationService.unlockBadge(auth.currentUser.uid, 'live_regular', 'Live Class Regular', 'Attended a live class', '📹');
                 }
               }}
               onShowNotification={onShowNotification}
@@ -431,7 +537,7 @@ function LiveClassDetails({
     <div className="bg-slate-950/40 rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
       {/* Banner */}
       <div className="h-32 w-full relative">
-        <img src={cls.banner || cls.thumbnail || undefined} alt={cls.title} className="w-full h-full object-cover" />
+        <img src={cls.banner?.trim() || cls.thumbnail?.trim() || undefined} alt={cls.title} className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 to-transparent"></div>
         <div className="absolute top-3 left-3 flex items-center space-x-1.5">
           <span className="text-[8px] font-mono font-bold bg-black/60 backdrop-blur-md text-white border border-white/10 px-2 py-0.5 rounded uppercase">
@@ -524,8 +630,8 @@ function LiveClassDetails({
         {/* Instructor Profile Card */}
         <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex space-x-3 items-center">
           <div className="w-10 h-10 rounded-full overflow-hidden border border-[#39FF14]/30 flex-shrink-0">
-            {cls.instructorPhoto ? (
-              <img src={cls.instructorPhoto || undefined} alt={cls.instructor} className="w-full h-full object-cover" />
+            {cls.instructorPhoto?.trim() ? (
+              <img src={cls.instructorPhoto.trim()} alt={cls.instructor} className="w-full h-full object-cover" />
             ) : (
               <User size={16} className="text-slate-400 m-3" />
             )}
@@ -558,6 +664,42 @@ function LiveClassDetails({
             </div>
           </div>
         </div>
+
+        {/* Add to Personal Calendar Box (Google Calendar & iCal) */}
+        {isUpcoming && (
+          <div className="p-3 bg-[#39FF14]/5 border border-[#39FF14]/20 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono font-bold text-[#39FF14] uppercase tracking-wider flex items-center space-x-1.5">
+                <Calendar size={13} />
+                <span>Save to Device Calendar</span>
+              </span>
+              <span className="text-[8.5px] font-mono text-slate-400">Google • Apple • Outlook • Mobile</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  handleGoogleCalendar(cls);
+                  onShowNotification('Opening Google Calendar event creator...', 'success');
+                }}
+                className="flex-1 py-2 bg-[#39FF14] hover:bg-[#32e011] text-black text-[10px] font-mono font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-sm"
+              >
+                <Calendar size={12} />
+                <span>Google Calendar</span>
+              </button>
+              <button
+                onClick={() => {
+                  handleDownloadIcs(cls);
+                  onShowNotification('Downloaded .ics event file!', 'success');
+                }}
+                className="py-2 px-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-[10px] font-mono font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
+                title="Download .ics file for Apple Calendar, Outlook or Mobile"
+              >
+                <Download size={12} />
+                <span>iCal (.ics)</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Watch Recording / Completed Class Extras */}
         {isCompleted && (
@@ -917,7 +1059,7 @@ function LiveWorkspace({
             {/* Real Streaming HTML5 Video source */}
             <video
               ref={videoRef}
-              src={(isCompleted ? cls.recordingUrl : cls.streamUrl) || undefined}
+              src={(isCompleted ? cls.recordingUrl?.trim() : cls.streamUrl?.trim()) || undefined}
               autoPlay
               playsInline
               controls
@@ -1092,8 +1234,8 @@ function LiveWorkspace({
                   }`}
                 >
                   <div className="w-5.5 h-5.5 rounded-full bg-slate-800 overflow-hidden border border-white/10 flex-shrink-0 mt-0.5">
-                    {msg.userPhoto ? (
-                      <img src={msg.userPhoto || undefined} alt={msg.userName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    {msg.userPhoto?.trim() ? (
+                      <img src={msg.userPhoto.trim()} alt={msg.userName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
                       <User size={10} className="text-slate-500 m-1" />
                     )}

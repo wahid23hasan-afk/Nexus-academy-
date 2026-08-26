@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Trophy, Flame, Zap, Target, Star, ShieldCheck, ChevronRight, BookOpen, Clock, Activity, Medal } from 'lucide-react';
+import { X, Trophy, Flame, Zap, Target, Star, ShieldCheck, ChevronRight, BookOpen, Clock, Activity, Medal, Crown, Sparkles, Gift, Wallet, Ticket } from 'lucide-react';
 import { gamificationService, UserXP, DailyStreak, AchievementBadge, RewardHistory, DailyGoal } from '../services/gamificationService';
 import { auth } from '../services/firebase';
+import { GlobalLeaderboard } from './GlobalLeaderboard';
+import { XpRewardsVaultModal } from './XpRewardsVaultModal';
 
 interface RewardsViewProps {
   onClose: () => void;
@@ -10,6 +13,8 @@ interface RewardsViewProps {
 
 export function RewardsView({ onClose }: RewardsViewProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'achievements' | 'leaderboard' | 'history'>('overview');
+  const [showVaultModal, setShowVaultModal] = useState(false);
+  const [vaultInitialTab, setVaultInitialTab] = useState<'converter' | 'vouchers' | 'spin' | 'vip' | 'ledger'>('converter');
   const [xp, setXp] = useState<UserXP | null>(null);
   const [streak, setStreak] = useState<DailyStreak | null>(null);
   const [achievements, setAchievements] = useState<AchievementBadge[]>([]);
@@ -48,6 +53,13 @@ export function RewardsView({ onClose }: RewardsViewProps) {
     return () => { mounted = false; };
   }, []);
 
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
   const handleClaimGoal = async (goal: DailyGoal) => {
     if (!auth.currentUser || goal.completed) return;
     // Simulate claiming
@@ -83,14 +95,14 @@ export function RewardsView({ onClose }: RewardsViewProps) {
   const xpForNextLevel = Math.pow(xp.currentLevel, 2) * 100;
   const progressPercent = Math.min(100, Math.max(0, ((xp.totalXP - xpForCurrentLevel) / (xpForNextLevel - xpForCurrentLevel)) * 100));
 
-  return (
+  return createPortal(
     <motion.div 
-      initial={{ opacity: 0, y: 50, scale: 0.95 }}
+      initial={{ opacity: 0, y: 30, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 50, scale: 0.95 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-md"
+      exit={{ opacity: 0, y: 30, scale: 0.95 }}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0"
     >
-      <div className="w-full h-[90vh] sm:h-[85vh] max-w-5xl bg-[#0a0f1d] border border-[#39FF14]/20 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(57,255,20,0.1)] flex flex-col relative">
+      <div className="w-full max-h-[88dvh] max-w-5xl bg-[#0a0f1d] border border-[#39FF14]/20 rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(57,255,20,0.1)] flex flex-col relative my-auto">
         {/* Header */}
         <div className="h-16 shrink-0 border-b border-white/10 flex items-center justify-between px-6 bg-slate-950/50 backdrop-blur-md relative z-10">
           <div className="flex items-center space-x-3">
@@ -102,9 +114,23 @@ export function RewardsView({ onClose }: RewardsViewProps) {
               <span className="text-[9px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded uppercase font-mono font-bold tracking-wider">XP System</span>
             </h2>
           </div>
-          <button onClick={onClose} className="p-2 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white rounded-lg transition-all">
-            <X size={18} />
-          </button>
+          
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                setVaultInitialTab('converter');
+                setShowVaultModal(true);
+              }}
+              className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-mono font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center space-x-1.5 transition-all cursor-pointer active:scale-95"
+            >
+              <Sparkles size={13} />
+              <span>XP Rewards Vault</span>
+            </button>
+            
+            <button onClick={onClose} className="p-2 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white rounded-lg transition-all cursor-pointer">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -164,6 +190,62 @@ export function RewardsView({ onClose }: RewardsViewProps) {
                       <p className="text-sm text-slate-400 font-sans">
                         You need <strong className="text-white">{xpForNextLevel - xp.totalXP} XP</strong> to reach Level {xp.currentLevel + 1}. Keep learning to unlock new perks and badges!
                       </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* DYNAMIC XP REWARDS & PERKS VAULT BANNER */}
+                <div className="relative rounded-2xl overflow-hidden p-5 border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-slate-900 to-indigo-950 shadow-[0_0_30px_rgba(245,158,11,0.1)]">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center space-x-2">
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center space-x-1">
+                          <Sparkles size={11} />
+                          <span>NEW REWARDS HUB</span>
+                        </span>
+                        <span className="text-xs text-slate-400 font-mono">Real-Time Rewards</span>
+                      </div>
+                      <h4 className="text-base font-bold text-white flex items-center space-x-2">
+                        <span>XP Rewards & Perks Vault</span>
+                      </h4>
+                      <p className="text-xs text-slate-300 max-w-xl">
+                        Convert your study XP to instant BDT Wallet balance, spin the Lucky Wheel for daily rewards, redeem 20%+ discount vouchers, and unlock VIP privileges!
+                      </p>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0 flex-wrap gap-y-2">
+                      <button
+                        onClick={() => {
+                          setVaultInitialTab('converter');
+                          setShowVaultModal(true);
+                        }}
+                        className="px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-mono font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
+                      >
+                        <Wallet size={14} />
+                        <span>XP to Wallet</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setVaultInitialTab('spin');
+                          setShowVaultModal(true);
+                        }}
+                        className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
+                      >
+                        <Gift size={14} />
+                        <span>Lucky Spin</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setVaultInitialTab('vouchers');
+                          setShowVaultModal(true);
+                        }}
+                        className="px-3 py-2 bg-indigo-500 hover:bg-indigo-400 text-white font-mono font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
+                      >
+                        <Ticket size={14} />
+                        <span>Vouchers</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -273,34 +355,18 @@ export function RewardsView({ onClose }: RewardsViewProps) {
             )}
 
             {activeTab === 'leaderboard' && (
-              <motion.div key="leaderboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-                  <div className="grid grid-cols-12 gap-4 p-4 border-b border-white/10 bg-black/20 text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
-                    <div className="col-span-2 text-center">Rank</div>
-                    <div className="col-span-5">Scholar</div>
-                    <div className="col-span-2 text-center">Level</div>
-                    <div className="col-span-3 text-right">Total XP</div>
-                  </div>
-                  {leaderboard.map((user, idx) => (
-                    <div key={user.userId} className={`grid grid-cols-12 gap-4 p-4 items-center border-b border-white/5 hover:bg-white/[0.02] transition-colors ${user.userId === auth.currentUser?.uid ? 'bg-[#39FF14]/5 border-l-2 border-l-[#39FF14]' : ''}`}>
-                      <div className="col-span-2 flex justify-center">
-                        {idx === 0 ? <Trophy size={18} className="text-yellow-400" /> :
-                         idx === 1 ? <Trophy size={18} className="text-slate-300" /> :
-                         idx === 2 ? <Trophy size={18} className="text-amber-600" /> :
-                         <span className="text-slate-500 font-mono text-sm font-bold">#{idx + 1}</span>}
-                      </div>
-                      <div className="col-span-5 font-bold text-sm text-slate-200 truncate">
-                        {user.userId === auth.currentUser?.uid ? 'You' : `Scholar_${user.userId.substring(0,4)}`}
-                      </div>
-                      <div className="col-span-2 text-center">
-                        <span className="bg-white/10 text-slate-300 text-[10px] px-2 py-1 rounded font-mono font-bold">{user.currentLevel}</span>
-                      </div>
-                      <div className="col-span-3 text-right font-mono font-bold text-[#39FF14]">
-                        {user.totalXP}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <motion.div 
+                key="leaderboard" 
+                initial={{ opacity: 0, y: 15 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                exit={{ opacity: 0, y: -15 }}
+                className="space-y-3"
+              >
+                <GlobalLeaderboard
+                  userId={auth.currentUser?.uid || ''}
+                  userXP={xp?.totalXP || 0}
+                  userName={auth.currentUser?.displayName || 'Scholar'}
+                />
               </motion.div>
             )}
 
@@ -338,7 +404,17 @@ export function RewardsView({ onClose }: RewardsViewProps) {
 
           </AnimatePresence>
         </div>
+
+        {/* Dynamic XP Rewards & Perks Vault Modal */}
+        <XpRewardsVaultModal
+          isOpen={showVaultModal}
+          onClose={() => setShowVaultModal(false)}
+          initialTab={vaultInitialTab}
+          userId={auth.currentUser?.uid || ''}
+          currentUserXP={xp?.totalXP || 0}
+        />
       </div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 }

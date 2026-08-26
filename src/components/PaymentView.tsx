@@ -7,16 +7,16 @@ import {
   Info,
   Clock,
   ArrowRight,
-  Smartphone,
-  CreditCard,
-  Building2,
   Copy,
-  Check
+  Check,
+  Wallet,
+  Sparkles
 } from 'lucide-react';
 import { Course, PaymentMethodConfig } from '../types/course';
 import { courseService, DEFAULT_PAYMENT_METHODS } from '../services/courseService';
-import { progressService } from '../services/progressService';
-import { auth } from '../services/firebase';
+import { gamificationService } from '../services/gamificationService';
+import { auth, db } from '../services/firebase';
+import { updateDoc, doc, addDoc, collection, serverTimestamp, onSnapshot, getDoc } from 'firebase/firestore';
 
 const FREE_COUPON_METHOD: PaymentMethodConfig = {
   id: 'coupon_free',
@@ -24,7 +24,7 @@ const FREE_COUPON_METHOD: PaymentMethodConfig = {
   type: 'Coupon',
   accountNumber: 'N/A - Fully Discounted',
   accountType: '100% Coupon',
-  instructions: 'Your coupon discount covers 100% of the program fee. Click "Pay Now & Submit" below to confirm your enrollment request.',
+  instructions: 'Your coupon discount covers 100% of the program fee. Click "Confirm Free Enrollment" below to unlock.',
   badge: '100% OFF',
   color: 'from-emerald-500 to-teal-600',
   icon: '🎁',
@@ -52,12 +52,15 @@ export function PaymentView({
   onShowNotification,
   onEnrollSuccess
 }: PaymentViewProps) {
-  // Payment methods dynamically loaded from Admin configuration
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodConfig[]>([]);
   const [selectedMethodId, setSelectedMethodId] = useState<string>('');
   const [loadingMethods, setLoadingMethods] = useState(true);
+  
+  // Real-time Wallet State & Toggle
+  const [userWalletBalance, setUserWalletBalance] = useState<number>(0);
+  const [useWallet, setUseWallet] = useState<boolean>(true);
 
-  // Form inputs
+  // Form inputs for remaining gateway payment
   const [walletNumber, setWalletNumber] = useState('0');
   const [cardNumber, setCardNumber] = useState('');
   const [cardHolder, setCardHolder] = useState('');
@@ -69,22 +72,71 @@ export function PaymentView({
   const [userTrxId, setUserTrxId] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [copiedAccount, setCopiedAccount] = useState(false);
+  const [submittedWalletUsed, setSubmittedWalletUsed] = useState(0);
+  const [submittedPaidAmount, setSubmittedPaidAmount] = useState(0);
 
   // Platform Fee calculation
   const platformFee = finalPrice > 0 ? 20 : 0;
   const totalPayable = finalPrice + platformFee;
 
-  // Load payment methods on mount
+  // Split payment calculations
+  const isWalletActive = useWallet && userWalletBalance > 0 && totalPayable > 0;
+  const walletDeduction = isWalletActive ? Math.min(userWalletBalance, totalPayable) : 0;
+  const remainingPayable = Math.max(0, totalPayable - walletDeduction);
+  const isFullyCoveredByWallet = isWalletActive && walletDeduction >= totalPayable;
+
+  // 1. Load payment methods & subscribe to real-time wallet balance changes
   useEffect(() => {
+    const userId = auth.currentUser?.uid || userProfile?.username || '';
+    
+    // Initial fetch from gamification service
+    async function initWallet() {
+      if (userId) {
+        try {
+          const bal = await gamificationService.getUserWalletBalance(userId);
+          setUserWalletBalance(bal);
+          if (bal > 0) setUseWallet(true);
+        } catch (e) {
+          console.warn('Failed initial wallet balance fetch:', e);
+        }
+      }
+    }
+    initWallet();
+
+    // Real-time Firestore snapshot listener on user document
+    let unsubUser: (() => void) | null = null;
+    if (userId) {
+      try {
+        unsubUser = onSnapshot(doc(db, 'users', userId), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            const bal = Number(data.walletBalance !== undefined ? data.walletBalance : (data.wallet || 0));
+            setUserWalletBalance(bal);
+          }
+        });
+      } catch (err) {
+        console.warn('Real-time wallet listener error:', err);
+      }
+    }
+
+    // Window event listener for wallet updates
+    const handleWalletEvt = (e: any) => {
+      if (e.detail?.newWallet !== undefined) {
+        setUserWalletBalance(e.detail.newWallet);
+      }
+    };
+    window.addEventListener('nexus_wallet_updated', handleWalletEvt);
+
+    // Load available payment gateways
     async function loadMethods() {
       try {
         const methods = await courseService.getPaymentMethods();
-        let active = methods.filter(m => m.isActive);
+        let active = methods.filter(m => m.isActive && m.id !== 'nexus_wallet');
         if (active.length === 0) {
-          active = DEFAULT_PAYMENT_METHODS;
+          active = DEFAULT_PAYMENT_METHODS.filter(m => m.id !== 'nexus_wallet');
         }
         if (totalPayable === 0) {
-          active = [FREE_COUPON_METHOD, ...active.filter(m => m.id !== 'coupon_free')];
+          active = [FREE_COUPON_METHOD, ...active];
         }
         setPaymentMethods(active);
         if (active.length > 0) {
@@ -92,15 +144,22 @@ export function PaymentView({
         }
       } catch (err) {
         console.error('Failed loading payment methods:', err);
-        const fallback = totalPayable === 0 ? [FREE_COUPON_METHOD, ...DEFAULT_PAYMENT_METHODS] : DEFAULT_PAYMENT_METHODS;
+        const fallback = totalPayable === 0 
+          ? [FREE_COUPON_METHOD, ...DEFAULT_PAYMENT_METHODS.filter(m => m.id !== 'nexus_wallet')] 
+          : DEFAULT_PAYMENT_METHODS.filter(m => m.id !== 'nexus_wallet');
         setPaymentMethods(fallback);
-        setSelectedMethodId(fallback[0].id);
+        if (fallback.length > 0) setSelectedMethodId(fallback[0].id);
       } finally {
         setLoadingMethods(false);
       }
     }
     loadMethods();
-  }, [totalPayable]);
+
+    return () => {
+      if (unsubUser) unsubUser();
+      window.removeEventListener('nexus_wallet_updated', handleWalletEvt);
+    };
+  }, [totalPayable, userProfile?.username]);
 
   const selectedMethod = paymentMethods.find(m => m.id === selectedMethodId);
 
@@ -140,14 +199,14 @@ export function PaymentView({
     }
   };
 
-  // Validations
-  const validateInputs = (): boolean => {
-    if (totalPayable === 0 || selectedMethod?.type === 'Coupon' || selectedMethod?.id === 'coupon_free') {
+  // Input Validation for Gateway part
+  const validateGatewayInputs = (): boolean => {
+    if (remainingPayable === 0 || totalPayable === 0 || selectedMethod?.type === 'Coupon' || selectedMethod?.id === 'coupon_free') {
       return true;
     }
 
     if (!selectedMethod) {
-      onShowNotification('Please select a payment method before submitting.', 'error');
+      onShowNotification('Please select a payment method for the remaining balance.', 'error');
       return false;
     }
 
@@ -178,58 +237,174 @@ export function PaymentView({
     return true;
   };
 
-  // Step 1: User clicks "Pay Now & Submit for Admin Approval"
-  const handleProceedToTrxInput = () => {
-    if (!validateInputs()) return;
+  // Full Wallet Instant Enrollment (No Form / TrxID Needed!)
+  const handleFullWalletInstantEnroll = async () => {
+    if (userWalletBalance < totalPayable) {
+      onShowNotification(`Insufficient Wallet Balance (৳${userWalletBalance}). You need ৳${totalPayable}.`, 'error');
+      return;
+    }
 
-    if (totalPayable === 0 || selectedMethod?.type === 'Coupon' || selectedMethod?.id === 'coupon_free') {
-      handleFinalSubmit('COUPON-FREE-' + Math.random().toString(36).substring(2, 8).toUpperCase());
-    } else {
-      setPhase('trx_input');
+    setPhase('loading');
+    try {
+      const userId = auth.currentUser?.uid || userProfile?.username || 'anonymous_user';
+      const userEmail = auth.currentUser?.email || 'student@nexus.edu';
+      const newWalletBalance = userWalletBalance - totalPayable;
+      
+      // 1. Deduct wallet balance from Firestore user document
+      await updateDoc(doc(db, 'users', userId), {
+        walletBalance: newWalletBalance,
+        updatedAt: serverTimestamp()
+      }).catch(async () => {
+        await updateDoc(doc(db, 'users', userId), {
+          wallet: newWalletBalance
+        });
+      });
+
+      // 2. Record purchase in Firestore with status 'success' (Instant Unlock)
+      await courseService.recordPurchase({
+        userId,
+        userEmail,
+        userPhoneNumber: 'Nexus Wallet (Full Instant)',
+        courseId: course.courseId,
+        courseTitle: course.title,
+        paymentMethod: 'Nexus Wallet Balance (Full Instant)',
+        amount: totalPayable,
+        walletAmountUsed: totalPayable,
+        walletUsed: totalPayable,
+        paidAmount: 0,
+        discount: discount,
+        coupon: couponCode,
+        transactionId: 'WALLET-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+        status: 'success'
+      });
+
+      // 3. Log debit transaction in walletTransactions
+      await addDoc(collection(db, 'walletTransactions'), {
+        userId,
+        type: 'debit',
+        category: 'course_purchase',
+        amount: totalPayable,
+        balanceAfter: newWalletBalance,
+        description: `Full Wallet Payment for: ${course.title}`,
+        createdAt: new Date().toISOString()
+      }).catch(() => {});
+
+      // 4. Fire real-time wallet update event
+      window.dispatchEvent(new CustomEvent('nexus_wallet_updated', { detail: { newWallet: newWalletBalance } }));
+
+      onShowNotification(`Successfully paid ৳${totalPayable} using Wallet Balance! Course unlocked instantly.`, 'success');
+      onEnrollSuccess();
+      onBack();
+    } catch (err: any) {
+      console.error('Wallet instant payment error:', err);
+      onShowNotification(err?.message || 'Wallet payment failed. Please try again.', 'error');
+      setPhase('form');
     }
   };
 
-  // Step 2: Final submission with Transaction ID (TrxID)
+  // Step 1 Proceed: Handles Gateway or Free Coupon
+  const handleProceedToStep2 = () => {
+    // If 100% covered by wallet balance, trigger instant wallet enrollment
+    if (isFullyCoveredByWallet) {
+      handleFullWalletInstantEnroll();
+      return;
+    }
+
+    // Free coupon check
+    if (totalPayable === 0 || selectedMethod?.type === 'Coupon' || selectedMethod?.id === 'coupon_free') {
+      handleFinalSubmit('COUPON-FREE-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+      return;
+    }
+
+    // Validate gateway form inputs before asking for TrxID
+    if (!validateGatewayInputs()) return;
+
+    setPhase('trx_input');
+  };
+
+  // Step 2: Final Submit for Hybrid or Full Gateway Payment
   const handleFinalSubmit = async (customTrxId?: string) => {
     const finalTrxId = (customTrxId || userTrxId).trim().toUpperCase();
 
-    if (!finalTrxId && (totalPayable > 0 && selectedMethod?.type !== 'Coupon')) {
+    if (!finalTrxId && remainingPayable > 0 && selectedMethod?.type !== 'Coupon') {
       onShowNotification('Please enter your payment Transaction ID (TrxID) to proceed.', 'error');
       return;
     }
 
     setPhase('loading');
 
-    setTimeout(async () => {
-      try {
-        const userId = auth.currentUser?.uid || userProfile?.username || 'anonymous_user';
-        const userEmail = auth.currentUser?.email || 'student@nexus.edu';
-        
-        // Save purchase with status 'pending' (Awaiting Admin Approval)
-        const result = await courseService.recordPurchase({
-          userId,
-          userEmail,
-          userPhoneNumber: walletNumber,
-          courseId: course.courseId,
-          courseTitle: course.title,
-          paymentMethod: selectedMethod?.name || 'MFS Payment',
-          amount: totalPayable,
-          discount: discount,
-          coupon: couponCode,
-          transactionId: finalTrxId,
-          status: 'pending' // Admin Approval Required!
+    try {
+      const userId = auth.currentUser?.uid || userProfile?.username || 'anonymous_user';
+      const userEmail = auth.currentUser?.email || 'student@nexus.edu';
+      const usedWalletAmount = walletDeduction;
+      const gatewayPaidAmount = remainingPayable;
+
+      // Deduct wallet balance if hybrid payment is used
+      if (usedWalletAmount > 0) {
+        const userDocRef = doc(db, 'users', userId);
+        const userSnap = await getDoc(userDocRef);
+        let currentBal = userWalletBalance;
+        if (userSnap.exists()) {
+          currentBal = Number(userSnap.data().walletBalance !== undefined ? userSnap.data().walletBalance : (userSnap.data().wallet || currentBal));
+        }
+        const newBal = Math.max(0, currentBal - usedWalletAmount);
+
+        await updateDoc(userDocRef, {
+          walletBalance: newBal,
+          updatedAt: serverTimestamp()
+        }).catch(async () => {
+          await updateDoc(userDocRef, { wallet: newBal });
         });
 
-        setTransactionId(result.transactionId);
-        setPhase('pending_approval');
-        onShowNotification('Payment & TrxID submitted! Awaiting Admin Approval.', 'success');
-      } catch (err) {
-        console.error('Error submitting payment:', err);
-        setTransactionId(finalTrxId || ('TXN-' + Math.random().toString(36).substring(2, 9).toUpperCase()));
-        setPhase('pending_approval');
-        onShowNotification('Payment submitted! Awaiting Admin Approval.', 'success');
+        // Log wallet debit entry
+        await addDoc(collection(db, 'walletTransactions'), {
+          userId,
+          type: 'debit',
+          category: 'hybrid_course_purchase',
+          amount: usedWalletAmount,
+          balanceAfter: newBal,
+          description: `Hybrid Payment (Wallet ৳${usedWalletAmount}) for course: ${course.title}`,
+          createdAt: new Date().toISOString()
+        }).catch(() => {});
+
+        window.dispatchEvent(new CustomEvent('nexus_wallet_updated', { detail: { newWallet: newBal } }));
       }
-    }, 1200);
+
+      // Record purchase in Firestore with status 'pending' (Awaiting Admin Approval)
+      const payMethodName = usedWalletAmount > 0 
+        ? `Nexus Wallet (৳${usedWalletAmount}) + ${selectedMethod?.name || 'MFS'} (৳${gatewayPaidAmount})`
+        : (selectedMethod?.name || 'MFS Payment');
+
+      const result = await courseService.recordPurchase({
+        userId,
+        userEmail,
+        userPhoneNumber: walletNumber,
+        courseId: course.courseId,
+        courseTitle: course.title,
+        paymentMethod: payMethodName,
+        amount: totalPayable,
+        walletAmountUsed: usedWalletAmount,
+        walletUsed: usedWalletAmount,
+        paidAmount: gatewayPaidAmount,
+        discount: discount,
+        coupon: couponCode,
+        transactionId: finalTrxId,
+        status: 'pending' // Admin Approval Required
+      });
+
+      setTransactionId(result.transactionId);
+      setSubmittedWalletUsed(usedWalletAmount);
+      setSubmittedPaidAmount(gatewayPaidAmount);
+      setPhase('pending_approval');
+      onShowNotification('Payment request & TrxID submitted! Awaiting Admin Approval.', 'success');
+    } catch (err: any) {
+      console.error('Error submitting payment:', err);
+      setTransactionId(finalTrxId || ('TXN-' + Math.random().toString(36).substring(2, 9).toUpperCase()));
+      setSubmittedWalletUsed(walletDeduction);
+      setSubmittedPaidAmount(remainingPayable);
+      setPhase('pending_approval');
+      onShowNotification('Payment request submitted! Awaiting Admin Approval.', 'success');
+    }
   };
 
   // Copy Admin Payment Number
@@ -272,10 +447,17 @@ export function PaymentView({
                 </span>
               </div>
               <div className="text-right">
-                <span className="text-[9px] font-mono text-slate-400 block uppercase">Total Payable</span>
-                <span className="text-base font-mono font-extrabold text-[#39FF14]">৳{totalPayable.toLocaleString()}</span>
+                <span className="text-[9px] font-mono text-slate-400 block uppercase">Remaining Due to Pay</span>
+                <span className="text-base font-mono font-extrabold text-[#39FF14]">৳{remainingPayable.toLocaleString()} BDT</span>
               </div>
             </div>
+
+            {walletDeduction > 0 && (
+              <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex justify-between items-center text-xs font-mono">
+                <span className="text-emerald-300 font-semibold">💰 Wallet Balance Applied:</span>
+                <span className="font-bold text-emerald-400">-৳{walletDeduction.toLocaleString()}</span>
+              </div>
+            )}
 
             {/* Admin Account Number display */}
             <div className="p-3 bg-white/[0.03] border border-white/10 rounded-xl flex items-center justify-between">
@@ -310,7 +492,7 @@ export function PaymentView({
               <span>নির্দেশনা (Instructions):</span>
             </div>
             <p className="text-[11px] text-amber-200/90 font-sans leading-relaxed">
-              ১. আপনার {selectedMethod?.name} অ্যাপ অথবা USSD ডায়াল করে <span className="font-bold text-amber-300">৳{totalPayable.toLocaleString()}</span> টাকা <span className="font-bold text-white">{selectedMethod?.accountNumber}</span> নম্বরে সেন্ড মানি/পেমেন্ট করুন।
+              ১. আপনার {selectedMethod?.name} অ্যাপ অথবা USSD ডায়াল করে অবশিস্ট <span className="font-bold text-amber-300">৳{remainingPayable.toLocaleString()}</span> টাকা <span className="font-bold text-white">{selectedMethod?.accountNumber}</span> নম্বরে সেন্ড মানি/পেমেন্ট করুন।
               <br />
               ২. পেমেন্ট সফল হলে এসএমএস (SMS) এ আসা <span className="font-bold text-[#39FF14]">Transaction ID (TrxID)</span> টি নিচে টাইপ করুন এবং কনফার্ম বাটনে ক্লিক করুন।
             </p>
@@ -353,7 +535,7 @@ export function PaymentView({
             onClick={() => setPhase('form')}
             className="w-full py-2.5 bg-transparent hover:bg-white/5 text-slate-400 hover:text-white font-mono text-xs rounded-xl transition-all cursor-pointer"
           >
-            ← Back to Payment Methods
+            ← Back to Payment Options
           </button>
         </footer>
       </div>
@@ -410,7 +592,7 @@ export function PaymentView({
               Payment Submission Received!
             </h2>
             <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
-              Your payment for <span className="text-amber-300 font-semibold">{course.title}</span> has been submitted successfully.
+              Your payment request for <span className="text-amber-300 font-semibold">{course.title}</span> has been submitted successfully.
             </p>
           </div>
 
@@ -419,26 +601,43 @@ export function PaymentView({
               <span className="text-slate-500">Transaction ID:</span>
               <span className="text-[#39FF14] font-bold">{transactionId}</span>
             </div>
+            
+            {submittedWalletUsed > 0 && (
+              <div className="flex justify-between border-b border-white/5 pb-2 text-emerald-400">
+                <span>Wallet Balance Deducted:</span>
+                <span className="font-bold">-৳{submittedWalletUsed.toLocaleString()} BDT</span>
+              </div>
+            )}
+
+            {submittedPaidAmount > 0 && (
+              <div className="flex justify-between border-b border-white/5 pb-2">
+                <span className="text-slate-500">Paid via {selectedMethod?.name || 'MFS'}:</span>
+                <span className="text-white font-bold">৳{submittedPaidAmount.toLocaleString()} BDT</span>
+              </div>
+            )}
+
             <div className="flex justify-between border-b border-white/5 pb-2">
-              <span className="text-slate-500">Payment Method:</span>
-              <span className="text-white">{selectedMethod?.name}</span>
-            </div>
-            <div className="flex justify-between border-b border-white/5 pb-2">
-              <span className="text-slate-500">Account Number:</span>
+              <span className="text-slate-500">Sender Number:</span>
               <span className="text-white">{walletNumber || 'Card Payment'}</span>
             </div>
+            
             <div className="flex justify-between">
-              <span className="text-slate-500">Total Paid:</span>
-              <span className="text-[#39FF14] font-bold">৳{totalPayable.toLocaleString()}</span>
+              <span className="text-slate-500">Total Program Fee:</span>
+              <span className="text-[#39FF14] font-bold">৳{totalPayable.toLocaleString()} BDT</span>
             </div>
           </div>
 
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3.5 text-left flex items-start space-x-3">
             <Info size={18} className="text-amber-400 shrink-0 mt-0.5" />
             <div className="text-[11px] text-amber-200/90 leading-relaxed space-y-1">
-              <p className="font-bold text-amber-300">Approval Notice:</p>
+              <p className="font-bold text-amber-300">Approval & Refund Policy:</p>
               <p>
-                Course lessons and content will be unlocked automatically as soon as the Admin verifies and approves your payment transaction.
+                Course lessons will be unlocked automatically as soon as Admin approves your request. 
+                {submittedWalletUsed > 0 && (
+                  <span className="block mt-1 text-emerald-300">
+                    💡 If Admin rejects this submission, your ৳{submittedWalletUsed.toLocaleString()} wallet deduction will be automatically refunded back to your Nexus Wallet in real-time.
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -475,15 +674,15 @@ export function PaymentView({
         </button>
         <div>
           <p className="text-[9px] font-mono text-[#39FF14] uppercase tracking-wider">SECURE CHECKOUT</p>
-          <h1 className="text-sm font-sans font-bold text-white tracking-tight">Select Payment Method</h1>
+          <h1 className="text-sm font-sans font-bold text-white tracking-tight">Payment & Enrollment</h1>
         </div>
       </header>
 
-      <main className="flex-1 py-4 space-y-5 overflow-y-auto px-1">
+      <main className="flex-1 py-4 space-y-4 overflow-y-auto px-1">
         
         {/* Course Mini Spotlight */}
         <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-3 flex items-center space-x-3">
-          <img src={course.thumbnail || undefined} alt={course.title} className="w-12 h-12 rounded-lg object-cover border border-white/10" referrerPolicy="no-referrer" />
+          <img src={course.thumbnail?.trim() || undefined} alt={course.title} className="w-12 h-12 rounded-lg object-cover border border-white/10" referrerPolicy="no-referrer" />
           <div className="flex-1 min-w-0">
             <span className="text-[8px] font-mono text-[#39FF14] uppercase tracking-wider block">{course.category}</span>
             <h2 className="text-[11px] font-sans font-bold text-white truncate leading-tight">{course.title}</h2>
@@ -491,243 +690,347 @@ export function PaymentView({
           </div>
         </div>
 
-        {/* ================= PAYMENT METHODS SELECTION ================= */}
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between pl-1">
-            <h3 className="text-[10px] font-mono font-bold text-slate-400 tracking-wider uppercase">
-              💳 SELECT PAYMENT METHOD:
-            </h3>
-            <span className="text-[9px] font-mono text-[#39FF14]">
-              {paymentMethods.length} Available
-            </span>
+        {/* ================= 1. REAL-TIME NEXUS WALLET BALANCE & TOGGLE ================= */}
+        <div className={`p-4 rounded-2xl border transition-all space-y-3 ${
+          isWalletActive 
+            ? 'bg-gradient-to-r from-emerald-950/60 to-slate-950 border-emerald-500/40 shadow-[0_4px_20px_rgba(16,185,129,0.15)]' 
+            : 'bg-slate-950 border-white/10'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl font-mono ${
+                userWalletBalance > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-500'
+              }`}>
+                💰
+              </div>
+              <div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-xs font-bold text-white">Nexus Wallet Balance</span>
+                  <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-mono font-bold animate-pulse">
+                    LIVE REAL-TIME
+                  </span>
+                </div>
+                <p className="text-sm font-mono font-extrabold text-[#39FF14]">
+                  ৳{userWalletBalance.toLocaleString()} BDT
+                </p>
+              </div>
+            </div>
+
+            {/* Toggle Switch */}
+            <div className="flex items-center space-x-2">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">
+                {useWallet ? 'ON' : 'OFF'}
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={useWallet} 
+                  onChange={(e) => setUseWallet(e.target.checked)}
+                  disabled={userWalletBalance <= 0}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#39FF14]"></div>
+              </label>
+            </div>
           </div>
 
-          {loadingMethods ? (
-            <div className="p-4 text-center text-xs font-mono text-slate-400 animate-pulse">
-              Loading payment gateways...
-            </div>
-          ) : paymentMethods.length === 0 ? (
-            <div className="p-4 text-center text-xs font-mono text-amber-400 bg-amber-500/10 rounded-xl border border-amber-500/20">
-              No active payment methods configured by admin.
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2.5">
-              {paymentMethods.map((m) => {
-                const isActive = selectedMethodId === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => {
-                      setSelectedMethodId(m.id);
-                      setWalletNumber('0');
-                      setCardNumber('');
-                      setCardHolder('');
-                      setExpiryDate('');
-                      setCvc('');
-                    }}
-                    className={`relative rounded-2xl p-3 text-left border cursor-pointer transition-all flex flex-col justify-between min-h-[90px] overflow-hidden group ${
-                      isActive 
-                        ? 'border-[#39FF14] bg-slate-950 shadow-[0_4px_16px_rgba(57,255,20,0.15)]' 
-                        : 'border-white/5 bg-white/[0.01] hover:border-white/15'
-                    }`}
-                  >
-                    {isActive && (
-                      <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#39FF14] shadow-[0_0_8px_#39FF14]" />
-                    )}
-
-                    <div className="flex items-center justify-between w-full">
-                      <span className="text-xl font-mono">{m.icon || '💳'}</span>
-                      <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                        isActive ? 'bg-[#39FF14]/10 text-[#39FF14]' : 'bg-white/5 text-slate-500'
-                      }`}>
-                        {m.badge || m.type}
-                      </span>
-                    </div>
-
-                    <div className="pt-2">
-                      <span className="text-[10px] font-mono text-slate-400 block leading-none">{m.accountType || m.type}</span>
-                      <span className="text-xs font-sans font-bold text-white mt-1 block truncate">
-                        {m.name}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+          {/* Wallet Toggle Active Notice / Breakdown */}
+          {isWalletActive && (
+            <div className="pt-2.5 border-t border-emerald-500/20 text-xs font-mono space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-300">Wallet Deduction:</span>
+                <span className="font-bold text-emerald-400">-৳{walletDeduction.toLocaleString()} BDT</span>
+              </div>
+              
+              {remainingPayable > 0 ? (
+                <div className="flex justify-between items-center text-amber-300 pt-1 border-t border-white/5">
+                  <span className="font-semibold">Remaining Amount to Pay:</span>
+                  <span className="font-extrabold text-amber-400">৳{remainingPayable.toLocaleString()} BDT</span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-1.5 text-emerald-400 pt-1 font-sans text-[11px]">
+                  <Sparkles size={14} className="shrink-0" />
+                  <span>100% covered by wallet! No mobile number or TrxID form needed.</span>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* ================= ADMIN PAYMENT NUMBER & DETAILS ================= */}
-        {selectedMethod && (
-          <div className="bg-slate-950 border border-[#39FF14]/20 rounded-2xl p-4 space-y-3 shadow-lg">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono text-[#39FF14] font-bold uppercase tracking-wider flex items-center">
-                <Info size={12} className="mr-1.5" />
-                ADMIN PAYMENT DETAILS
-              </span>
-              <span className="text-[9px] bg-[#39FF14]/10 text-[#39FF14] px-2 py-0.5 rounded font-mono font-bold">
-                {selectedMethod.accountType || 'Personal'}
-              </span>
+        {/* ================= 2. FULL WALLET INSTANT COVERAGE NOTICE ================= */}
+        {isFullyCoveredByWallet ? (
+          <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 text-center space-y-3 shadow-lg">
+            <div className="w-12 h-12 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-xl border border-emerald-500/30">
+              ⚡
             </div>
-
-            <div className="p-3 bg-white/[0.02] border border-white/10 rounded-xl flex items-center justify-between">
-              <div>
-                <span className="text-[9px] font-mono text-slate-400 block uppercase">
-                  {selectedMethod.name} Number / Gateway:
-                </span>
-                <span className="text-sm font-mono font-extrabold text-white tracking-wider">
-                  {selectedMethod.accountNumber}
+            <div>
+              <h3 className="text-sm font-bold text-white">Full Wallet Instant Enrollment Available</h3>
+              <p className="text-xs text-slate-300 mt-1 max-w-xs mx-auto">
+                Your wallet balance (৳{userWalletBalance.toLocaleString()}) covers 100% of the program fee (৳{totalPayable.toLocaleString()}). No form, phone number, or TrxID required!
+              </p>
+            </div>
+            <button
+              onClick={handleFullWalletInstantEnroll}
+              className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg cursor-pointer"
+            >
+              <Sparkles size={16} />
+              <span>ওয়ালেট দিয়ে ইনস্ট্যান্ট এনরোল করুন (৳{totalPayable})</span>
+            </button>
+          </div>
+        ) : (
+          /* ================= 3. SECONDARY PAYMENT GATEWAY SELECTION FOR REMAINING AMOUNT ================= */
+          <div className="space-y-4">
+            
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between pl-1">
+                <h3 className="text-[10px] font-mono font-bold text-slate-400 tracking-wider uppercase">
+                  💳 {remainingPayable < totalPayable ? `SELECT PAYMENT GATEWAY FOR REMAINING (৳${remainingPayable}):` : 'SELECT PAYMENT METHOD:'}
+                </h3>
+                <span className="text-[9px] font-mono text-[#39FF14]">
+                  {paymentMethods.length} Available
                 </span>
               </div>
-              <button
-                onClick={handleCopyAccount}
-                className="px-2.5 py-1.5 bg-[#39FF14]/10 hover:bg-[#39FF14]/20 border border-[#39FF14]/30 rounded-lg text-xs font-mono text-[#39FF14] flex items-center space-x-1 cursor-pointer transition-colors"
-              >
-                {copiedAccount ? <Check size={12} /> : <Copy size={12} />}
-                <span>{copiedAccount ? 'Copied' : 'Copy'}</span>
-              </button>
+
+              {loadingMethods ? (
+                <div className="p-4 text-center text-xs font-mono text-slate-400 animate-pulse">
+                  Loading payment gateways...
+                </div>
+              ) : paymentMethods.length === 0 ? (
+                <div className="p-4 text-center text-xs font-mono text-amber-400 bg-amber-500/10 rounded-xl border border-amber-500/20">
+                  No active payment methods configured by admin.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2.5">
+                  {paymentMethods.map((m) => {
+                    const isActive = selectedMethodId === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          setSelectedMethodId(m.id);
+                          setWalletNumber('0');
+                          setCardNumber('');
+                          setCardHolder('');
+                          setExpiryDate('');
+                          setCvc('');
+                        }}
+                        className={`relative rounded-2xl p-3 text-left border cursor-pointer transition-all flex flex-col justify-between min-h-[90px] overflow-hidden group ${
+                          isActive 
+                            ? 'border-[#39FF14] bg-slate-950 shadow-[0_4px_16px_rgba(57,255,20,0.15)]' 
+                            : 'border-white/5 bg-white/[0.01] hover:border-white/15'
+                        }`}
+                      >
+                        {isActive && (
+                          <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#39FF14] shadow-[0_0_8px_#39FF14]" />
+                        )}
+
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xl font-mono">{m.icon || '💳'}</span>
+                          <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                            isActive ? 'bg-[#39FF14]/10 text-[#39FF14]' : 'bg-white/5 text-slate-500'
+                          }`}>
+                            {m.badge || m.type}
+                          </span>
+                        </div>
+
+                        <div className="pt-2">
+                          <span className="text-[10px] font-mono text-slate-400 block leading-none">{m.accountType || m.type}</span>
+                          <span className="text-xs font-sans font-bold text-white mt-1 block truncate">
+                            {m.name}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {selectedMethod.instructions && (
-              <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
-                💡 <span className="font-semibold text-white">Instructions:</span> {selectedMethod.instructions}
-              </p>
+            {/* Admin Payment Number & Instructions */}
+            {selectedMethod && selectedMethod.type !== 'Coupon' && (
+              <div className="bg-slate-950 border border-[#39FF14]/20 rounded-2xl p-4 space-y-3 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-[#39FF14] font-bold uppercase tracking-wider flex items-center">
+                    <Info size={12} className="mr-1.5" />
+                    ADMIN PAYMENT DETAILS ({selectedMethod.name})
+                  </span>
+                  <span className="text-[9px] bg-[#39FF14]/10 text-[#39FF14] px-2 py-0.5 rounded font-mono font-bold">
+                    {selectedMethod.accountType || 'Personal'}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-white/[0.02] border border-white/10 rounded-xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[9px] font-mono text-slate-400 block uppercase">
+                      {selectedMethod.name} Number / Gateway:
+                    </span>
+                    <span className="text-sm font-mono font-extrabold text-white tracking-wider">
+                      {selectedMethod.accountNumber}
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleCopyAccount}
+                    className="px-2.5 py-1.5 bg-[#39FF14]/10 hover:bg-[#39FF14]/20 border border-[#39FF14]/30 rounded-lg text-xs font-mono text-[#39FF14] flex items-center space-x-1 cursor-pointer transition-colors"
+                  >
+                    {copiedAccount ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copiedAccount ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+
+                {selectedMethod.instructions && (
+                  <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
+                    💡 <span className="font-semibold text-white">Instructions:</span> {selectedMethod.instructions}
+                  </p>
+                )}
+              </div>
             )}
+
+            {/* User Payment Details Input */}
+            {selectedMethod && (
+              <div className="space-y-2.5">
+                <h3 className="text-[10px] font-mono font-bold text-slate-400 tracking-wider uppercase pl-1">
+                  ✍️ ENTER YOUR PAYMENT DETAILS FOR {selectedMethod.name.toUpperCase()}:
+                </h3>
+
+                <div className="bg-slate-950 border border-white/10 rounded-2xl p-4 space-y-3.5 shadow-md">
+                  
+                  {/* MFS Phone Input */}
+                  {(selectedMethod.type === 'MFS' || ['bkash', 'nagad', 'rocket', 'upay', 'cellfin'].includes(selectedMethod.id.toLowerCase())) && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-mono text-slate-400 block">
+                        YOUR {selectedMethod.name.toUpperCase()} SENDER NUMBER:
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-[#39FF14] font-mono text-xs font-bold">
+                          +88
+                        </div>
+                        <input
+                          type="tel"
+                          value={walletNumber}
+                          onChange={handleWalletChange}
+                          placeholder="01XXXXXXXXX"
+                          className="w-full pl-12 pr-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-[#39FF14]/50 transition-all font-bold tracking-wider"
+                        />
+                      </div>
+                      <p className="text-[8.5px] text-slate-400 leading-normal font-sans">
+                        * Input starts automatically with <span className="text-[#39FF14] font-bold">"0"</span>. Type remaining 10 digits.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Coupon / Free 100% Discount Message */}
+                  {(selectedMethod.type === 'Coupon' || selectedMethod.id === 'coupon_free') && (
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs font-sans space-y-1">
+                      <p className="font-bold">🎁 100% Discount Applied!</p>
+                      <p className="text-[10px] text-slate-300">
+                        Your coupon discount covers 100% of the program fee. Click "Confirm Free Enrollment" below to unlock.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Card Details */}
+                  {(selectedMethod.type === 'Card' || ['visa', 'mastercard', 'card'].includes(selectedMethod.id.toLowerCase())) && (
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono text-slate-400 block">CARD NUMBER (16 DIGITS):</label>
+                        <input
+                          type="text"
+                          value={cardNumber}
+                          onChange={handleCardNumberChange}
+                          placeholder="0000 0000 0000 0000"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-[#39FF14]/50 transition-all"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono text-slate-400 block">CARDHOLDER NAME:</label>
+                        <input
+                          type="text"
+                          value={cardHolder}
+                          onChange={(e) => setCardHolder(e.target.value)}
+                          placeholder="John Doe"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-sans text-white focus:outline-none focus:border-[#39FF14]/50 transition-all"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-slate-400 block">EXPIRY DATE:</label>
+                          <input
+                            type="text"
+                            value={expiryDate}
+                            onChange={handleExpiryChange}
+                            placeholder="MM/YY"
+                            className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-mono text-white text-center focus:outline-none focus:border-[#39FF14]/50 transition-all"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-slate-400 block">CVC CODE:</label>
+                          <input
+                            type="password"
+                            value={cvc}
+                            onChange={handleCvcChange}
+                            placeholder="***"
+                            className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-mono text-white text-center focus:outline-none focus:border-[#39FF14]/50 transition-all"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
-        {/* ================= USER TRANSACTION DETAILS INPUT ================= */}
-        {selectedMethod && (
-          <div className="space-y-2.5">
-            <h3 className="text-[10px] font-mono font-bold text-slate-400 tracking-wider uppercase pl-1">
-              ✍️ ENTER YOUR PAYMENT DETAILS:
-            </h3>
-
-            <div className="bg-slate-950 border border-white/10 rounded-2xl p-4 space-y-3.5 shadow-md">
-              
-              {/* MFS Phone Number Input with Auto-Prefilled 0 */}
-              {(selectedMethod.type === 'MFS' || ['bkash', 'nagad', 'rocket', 'upay', 'cellfin'].includes(selectedMethod.id.toLowerCase())) && (
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono text-slate-400 block">
-                    YOUR {selectedMethod.name.toUpperCase()} NUMBER (AUTOMATIC PRE-FILLED 0):
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-[#39FF14] font-mono text-xs font-bold">
-                      +88
-                    </div>
-                    <input
-                      type="tel"
-                      value={walletNumber}
-                      onChange={handleWalletChange}
-                      placeholder="01XXXXXXXXX"
-                      className="w-full pl-12 pr-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-[#39FF14]/50 transition-all font-bold tracking-wider"
-                    />
-                  </div>
-                  <p className="text-[8.5px] text-slate-400 leading-normal font-sans">
-                    * The input starts automatically with <span className="text-[#39FF14] font-bold">"0"</span>. Simply type your remaining digits (e.g., 01712345678).
-                  </p>
-                </div>
-              )}
-
-              {/* Coupon / Free 100% Discount Message */}
-              {(selectedMethod.type === 'Coupon' || selectedMethod.id === 'coupon_free') && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs font-sans space-y-1">
-                  <p className="font-bold">🎁 100% Discount Applied!</p>
-                  <p className="text-[10px] text-slate-300">
-                    Your coupon discount covers 100% of the program fee. No payment details required! Click "Pay Now & Submit For Admin Approval" below to confirm your enrollment.
-                  </p>
-                </div>
-              )}
-              {(selectedMethod.type === 'Card' || ['visa', 'mastercard', 'card'].includes(selectedMethod.id.toLowerCase())) && (
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-mono text-slate-400 block">CARD NUMBER (16 DIGITS):</label>
-                    <input
-                      type="text"
-                      value={cardNumber}
-                      onChange={handleCardNumberChange}
-                      placeholder="0000 0000 0000 0000"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-mono text-white focus:outline-none focus:border-[#39FF14]/50 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-mono text-slate-400 block">CARDHOLDER NAME:</label>
-                    <input
-                      type="text"
-                      value={cardHolder}
-                      onChange={(e) => setCardHolder(e.target.value)}
-                      placeholder="John Doe"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-sans text-white focus:outline-none focus:border-[#39FF14]/50 transition-all"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-slate-400 block">EXPIRY DATE:</label>
-                      <input
-                        type="text"
-                        value={expiryDate}
-                        onChange={handleExpiryChange}
-                        placeholder="MM/YY"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-mono text-white text-center focus:outline-none focus:border-[#39FF14]/50 transition-all"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-slate-400 block">CVC CODE:</label>
-                      <input
-                        type="password"
-                        value={cvc}
-                        onChange={handleCvcChange}
-                        placeholder="***"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-xs font-mono text-white text-center focus:outline-none focus:border-[#39FF14]/50 transition-all"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </div>
-        )}
-
-        {/* ================= BILLING SUMMARY ================= */}
+        {/* ================= BILLING BREAKDOWN SUMMARY ================= */}
         <div className="space-y-2.5">
           <h3 className="text-[10px] font-mono font-bold text-slate-400 tracking-wider uppercase pl-1">
             🧾 FINAL BILLING CALCULATION SUMMARY:
           </h3>
 
-          <div className="bg-slate-950 border border-white/10 rounded-2xl p-4 space-y-2.5 shadow-md">
-            <div className="flex justify-between text-xs font-sans text-slate-400">
+          <div className="bg-slate-950 border border-white/10 rounded-2xl p-4 space-y-2.5 shadow-md font-sans">
+            <div className="flex justify-between text-xs text-slate-400">
               <span>Program Catalog Subtotal</span>
-              <span className="font-mono">৳{course.price?.toLocaleString()}</span>
+              <span className="font-mono text-white">৳{course.price?.toLocaleString()}</span>
             </div>
 
             {discount > 0 && (
-              <div className="flex justify-between text-xs font-sans text-emerald-400">
+              <div className="flex justify-between text-xs text-emerald-400">
                 <span>Total Coupon & Campaign Discount</span>
                 <span className="font-mono">-৳{discount?.toLocaleString()}</span>
               </div>
             )}
 
             {platformFee > 0 && (
-              <div className="flex justify-between text-xs font-sans text-slate-400">
+              <div className="flex justify-between text-xs text-slate-400">
                 <span className="flex items-center">
                   <span>SSL Gateway Platform Fee</span>
                   <Info size={10} className="ml-1 text-slate-500" />
                 </span>
-                <span className="font-mono">৳{platformFee}</span>
+                <span className="font-mono text-white">৳{platformFee}</span>
+              </div>
+            )}
+
+            {isWalletActive && (
+              <div className="flex justify-between text-xs text-emerald-400 pt-1 border-t border-white/5 font-mono">
+                <span>💰 Nexus Wallet Balance Deduction</span>
+                <span className="font-bold">-৳{walletDeduction.toLocaleString()} BDT</span>
               </div>
             )}
 
             <div className="border-t border-white/10 pt-3 flex justify-between items-center mt-1">
               <div>
-                <span className="text-xs font-sans text-white font-semibold block">Settled Total Payable</span>
-                <span className="text-[9px] font-mono text-slate-500">Includes all VAT/Platform Fee</span>
+                <span className="text-xs text-white font-semibold block">Net Payable Amount</span>
+                <span className="text-[9px] font-mono text-slate-500">
+                  {walletDeduction > 0 ? `Total ৳${totalPayable} minus ৳${walletDeduction} wallet` : 'Includes all VAT/Platform Fee'}
+                </span>
               </div>
               <div>
                 <span className="text-base font-mono font-extrabold text-[#39FF14] drop-shadow-[0_0_6px_rgba(57,255,20,0.3)]">
-                  ৳{totalPayable?.toLocaleString()}
+                  ৳{remainingPayable?.toLocaleString()} BDT
                 </span>
               </div>
             </div>
@@ -737,19 +1040,27 @@ export function PaymentView({
       </main>
 
       {/* ================= FOOTER ACTIONS ================= */}
-      <footer className="mt-4 pt-3 border-t border-white/5 space-y-2.5 px-1 bg-[#0a0f1d]">
-        <button
-          onClick={handleProceedToTrxInput}
-          className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-[#39FF14]/10 cursor-pointer"
-        >
-          <ShieldCheck size={14} />
-          <span>Pay Now & Submit for Admin Approval</span>
-        </button>
+      {!isFullyCoveredByWallet && (
+        <footer className="mt-4 pt-3 border-t border-white/5 space-y-2.5 px-1 bg-[#0a0f1d]">
+          <button
+            onClick={handleProceedToStep2}
+            className="w-full py-3.5 bg-[#39FF14] hover:bg-[#32e011] text-black font-bold uppercase tracking-wider text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-[#39FF14]/10 cursor-pointer"
+          >
+            <ShieldCheck size={14} />
+            <span>
+              {totalPayable === 0 || selectedMethod?.type === 'Coupon'
+                ? 'Confirm Free Enrollment'
+                : walletDeduction > 0
+                ? `Pay Remaining ৳${remainingPayable} & Continue`
+                : 'Pay Now & Submit for Admin Approval'}
+            </span>
+          </button>
 
-        <p className="text-[8px] font-mono text-center text-slate-500 tracking-wider">
-          🔒 ENCRYPTED PAYMENT LEDGER • REQUIRES ADMIN APPROVAL BEFORE ENROLLMENT
-        </p>
-      </footer>
+          <p className="text-[8px] font-mono text-center text-slate-500 tracking-wider">
+            🔒 ENCRYPTED PAYMENT LEDGER • REQUIRES ADMIN APPROVAL BEFORE ENROLLMENT
+          </p>
+        </footer>
+      )}
 
     </div>
   );

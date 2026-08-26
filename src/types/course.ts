@@ -1,3 +1,28 @@
+export interface CourseLesson {
+  id?: string;
+  lessonId: string;
+  sectionId?: string;
+  chapterId?: string;
+  title: string;
+  duration?: string;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  isPreviewAllowed?: boolean;
+  isFreePreview?: boolean;
+  sequenceOrder?: number;
+  description?: string;
+  resources?: { title: string; downloadUrl: string; type?: string; fileSize?: string }[];
+}
+
+export interface CourseSection {
+  id?: string;
+  sectionId?: string;
+  title: string;
+  sequenceOrder?: number;
+  description?: string;
+  lessons: CourseLesson[];
+}
+
 export interface Course {
   courseId: string;
   title: string;
@@ -22,6 +47,12 @@ export interface Course {
   learningOutcomes?: string[];
   skillsGained?: string[];
   requirements?: string[];
+  sections?: CourseSection[];
+  curriculum?: CurriculumChapter[];
+  modules?: any[];
+  videoUrl?: string;
+  previewVideoUrl?: string;
+  demoVideoUrl?: string;
   lastUpdated?: string;
   createdAt: any; // Firestore Timestamp
   updatedAt: any; // Firestore Timestamp
@@ -49,27 +80,32 @@ export interface Instructor {
 }
 
 export interface CurriculumLesson {
+  id?: string;
   lessonId: string;
+  chapterId?: string;
   title: string;
-  duration: string;
-  isPreviewAllowed: boolean;
-  sequenceOrder: number;
+  duration?: string;
+  isPreviewAllowed?: boolean;
+  sequenceOrder?: number;
+  videoUrl?: string;
+  thumbnailUrl?: string;
 }
 
 export interface CurriculumChapter {
+  id?: string;
   chapterId: string;
   courseId: string;
   title: string;
-  sequenceOrder: number;
-  lessonsCount: number;
-  totalDuration: string;
+  sequenceOrder?: number;
+  lessonsCount?: number;
+  totalDuration?: string;
   lessons: CurriculumLesson[];
 }
 
 export interface CourseReview {
   reviewId: string;
   courseId: string;
-  studentName: string;
+  studentName?: string;
   studentPhotoURL?: string;
   rating: number;
   comment: string;
@@ -116,6 +152,9 @@ export interface Purchase {
   status: 'pending' | 'approved' | 'active' | 'success' | 'rejected' | 'failed';
   transactionId: string;
   purchaseDate: any;
+  walletAmountUsed?: number;
+  walletUsed?: number;
+  paidAmount?: number;
 }
 
 export interface PaymentDetails {

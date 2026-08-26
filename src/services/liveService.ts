@@ -94,7 +94,7 @@ class LiveService {
         status: 'completed',
         thumbnail: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=600&auto=format&fit=crop&q=80',
         banner: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=1200&auto=format&fit=crop&q=80',
-        recordingUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+        recordingUrl: 'https://media.w3.org/2010/05/sintel/trailer_hd.mp4',
         notesUrl: 'https://example.com/assets/react-advanced-hooks-notes.pdf',
         createdAt: new Date().toISOString()
       },
@@ -113,7 +113,7 @@ class LiveService {
         status: 'completed',
         thumbnail: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=600&auto=format&fit=crop&q=80',
         banner: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=1200&auto=format&fit=crop&q=80',
-        recordingUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+        recordingUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
         notesUrl: 'https://example.com/assets/ielts-writing-rubrics.pdf',
         createdAt: new Date().toISOString()
       }
@@ -139,9 +139,8 @@ class LiveService {
         list.push(doc.data() as LiveClass);
       });
 
-      // To keep timestamps perfectly relevant, we overwrite/re-seed the main dynamic ones with current time.
-      // We ONLY write if there is an authenticated user signed in.
-      if (auth.currentUser) {
+      // If database is completely empty, seed default initial mock classes
+      if (list.length === 0 && auth.currentUser) {
         try {
           const freshMocks = this.generateDynamicMockClasses(courseId);
           for (const item of freshMocks) {
@@ -149,7 +148,6 @@ class LiveService {
             await setDoc(ref, item, { merge: true });
           }
 
-          // Re-fetch sorted by start time
           const finalSnapshot = await getDocs(q);
           const finalList: LiveClass[] = [];
           finalSnapshot.forEach(doc => {
@@ -157,8 +155,7 @@ class LiveService {
           });
           return finalList.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
         } catch (writeErr) {
-          console.warn('Bypassing Firestore write during seeding (likely permission or offline):', writeErr);
-          // If write fails (e.g. permission or unauthenticated), return whatever was read or mock data.
+          console.warn('Bypassing Firestore write during initial seeding:', writeErr);
         }
       }
 
@@ -169,6 +166,54 @@ class LiveService {
     } catch (err) {
       console.error('Error seeding/fetching live classes:', err);
       return this.generateDynamicMockClasses(courseId);
+    }
+  }
+
+  /**
+   * Listen to real-time live class list changes.
+   */
+  listenToLiveClasses(callback: (classes: LiveClass[]) => void) {
+    const q = query(collection(db, this.classesColl));
+    return onSnapshot(q, (snapshot) => {
+      const list: LiveClass[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as LiveClass);
+      });
+      callback(list.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
+    }, (err) => {
+      console.warn('Silent live classes onSnapshot warning:', err);
+    });
+  }
+
+  /**
+   * Save / Publish / Update a Live Class in Firestore
+   */
+  async saveLiveClass(liveClass: LiveClass): Promise<void> {
+    try {
+      const ref = doc(db, this.classesColl, liveClass.classId);
+      await setDoc(ref, liveClass, { merge: true });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nexus_live_class_updated', { detail: liveClass }));
+      }
+    } catch (err) {
+      console.error('Error saving live class:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Delete a Live Class from Firestore
+   */
+  async deleteLiveClass(classId: string): Promise<void> {
+    try {
+      const ref = doc(db, this.classesColl, classId);
+      await deleteDoc(ref);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nexus_live_class_updated', { detail: { classId, deleted: true } }));
+      }
+    } catch (err) {
+      console.error('Error deleting live class:', err);
+      throw err;
     }
   }
 

@@ -129,14 +129,18 @@ export const certificateService = {
     const nowISO = new Date().toISOString();
 
     const certificate: Certificate = {
+      id: certId,
       certificateId: certId,
+      certificateNumber: certId,
       userId,
       studentName,
       courseId,
       courseName,
+      courseTitle: courseName,
       instructorName,
       completionDate: nowISO,
       issueDate: nowISO,
+      issuedAt: nowISO, // Fallback, will be replaced by serverTimestamp if possible
       verificationId,
       isVerified: true,
       qrCodePlaceholderUrl: `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
@@ -170,7 +174,12 @@ export const certificateService = {
 
     // Save to Firestore
     try {
-      await setDoc(doc(db, 'certificates', certId), certificate);
+      const { serverTimestamp } = await import('firebase/firestore');
+      const certToSave = {
+        ...certificate,
+        issuedAt: serverTimestamp()
+      };
+      await setDoc(doc(db, 'certificates', certId), certToSave);
       await setDoc(doc(db, 'certificateVerification', verificationId), verificationRecord);
       await setDoc(doc(db, 'courseCompletion', completionRecord.completionId), completionRecord);
     } catch (err) {
@@ -192,7 +201,42 @@ export const certificateService = {
     return certificate;
   },
 
-  // 3. Get all certificates for a student
+  // Get template settings from Firestore
+  async getCertificateSettings(): Promise<any> {
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'certificates'));
+      if (snap.exists()) {
+        return snap.data();
+      }
+    } catch (err) {
+      console.warn('Failed to fetch certificate settings', err);
+    }
+    return {
+      instituteName: 'Nexus Academy of Advanced Technology',
+      signatureName: 'Dr. John Doe',
+      signatureTitle: 'Director of Education'
+    };
+  },
+
+  // 3. Get specific certificate for user and course
+  async getCertificate(userId: string, courseId: string): Promise<Certificate | null> {
+    const certId = `cert_${userId}_${courseId}`;
+    try {
+      const docRef = doc(db, 'certificates', certId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        return snap.data() as Certificate;
+      }
+    } catch (err) {
+      console.warn('Firestore fetch failed for single certificate:', err);
+    }
+
+    const localCerts = JSON.parse(localStorage.getItem('nexus_certificates') || '[]');
+    const found = localCerts.find((c: any) => c.certificateId === certId || (c.userId === userId && c.courseId === courseId));
+    return found || null;
+  },
+
+  // 4. Get all certificates for a student
   async getUserCertificates(userId: string): Promise<Certificate[]> {
     try {
       const q = query(collection(db, 'certificates'), where('userId', '==', userId));

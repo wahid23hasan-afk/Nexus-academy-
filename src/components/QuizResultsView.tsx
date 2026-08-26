@@ -373,8 +373,8 @@ export function QuizResultsView({
 
                           {/* Profile Picture */}
                           <div className="w-7 h-7 rounded-full bg-slate-800 border border-white/10 overflow-hidden shrink-0">
-                            {entry.studentPhotoURL ? (
-                              <img src={entry.studentPhotoURL || undefined} alt={entry.studentName} className="w-full h-full object-cover" />
+                            {entry.studentPhotoURL?.trim() ? (
+                              <img src={entry.studentPhotoURL.trim()} alt={entry.studentName} className="w-full h-full object-cover" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-white font-mono">
                                 {entry.studentName.charAt(0).toUpperCase()}

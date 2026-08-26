@@ -3,7 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User as UserIcon, Mail, Phone, Lock, Eye, EyeOff, UserPlus, ChevronLeft, Check, AlertCircle, ExternalLink, LogIn } from 'lucide-react';
 import { AppView, RegistrationFormErrors } from '../types/auth';
 import { authService } from '../services/authService';
+import { systemSettingsService } from '../services/systemSettingsService';
 import { ENABLE_EMAIL_VERIFICATION } from '../config';
+import { NeonConfetti } from './NeonConfetti';
 
 interface RegisterViewProps {
   onNavigate: (view: AppView) => void;
@@ -26,6 +28,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   // Real-time validations
   const [usernameValid, setUsernameValid] = useState<{ checked: boolean; valid: boolean; message: string }>({ checked: false, valid: false, message: '' });
@@ -184,10 +187,20 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     setIsLoading(true);
 
     try {
+      const systemSettings = await systemSettingsService.getSystemSettings();
+      if (systemSettings.maintenanceMode) {
+        setIsLoading(false);
+        const maintError = 'সিস্টেম রক্ষণাবেক্ষণ চলছে। পরবর্তীতে চেষ্টা করুন।';
+        setRegistrationError(maintError);
+        onShowNotification(maintError, 'error');
+        return;
+      }
+
       const response = await authService.register(fullName, username, email, phone, password);
       setIsLoading(false);
 
       if (response.success && response.user) {
+        setShowConfetti(true);
         onSetVerificationEmail(email);
         onShowNotification('Account initiated. Secure link dispatched!', 'success');
 
@@ -234,6 +247,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
   return (
     <div className="flex-1 flex flex-col justify-between py-1">
+      <NeonConfetti active={showConfetti} particleCount={36} />
       {/* Header */}
       <div>
         <button 
@@ -304,7 +318,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               className={`
                 w-full pl-12 pr-4 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
                 placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
-                ${errors.fullName ? 'border-red-500/40 focus:border-red-500 bg-red-500/[0.005]' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
+                ${errors.fullName ? 'border-red-500/40 focus:border-red-500 bg-red-500/[0.005]' : 'border-white/10 focus:border-[#39FF14] neon-focus-glow focus:bg-white/[0.04]'}
               `}
             />
           </div>
@@ -347,7 +361,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               className={`
                 w-full pl-12 pr-4 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
                 placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
-                ${errors.username || (usernameValid.checked && !usernameValid.valid) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
+                ${errors.username || (usernameValid.checked && !usernameValid.valid) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14] neon-focus-glow focus:bg-white/[0.04]'}
               `}
             />
           </div>
@@ -387,7 +401,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               className={`
                 w-full pl-12 pr-4 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
                 placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
-                ${errors.email || (emailValid.checked && !emailValid.valid) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
+                ${errors.email || (emailValid.checked && !emailValid.valid) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14] neon-focus-glow focus:bg-white/[0.04]'}
               `}
             />
           </div>
@@ -419,7 +433,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               className={`
                 w-full pl-12 pr-4 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
                 placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
-                ${errors.phone ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
+                ${errors.phone ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14] neon-focus-glow focus:bg-white/[0.04]'}
               `}
             />
           </div>
@@ -468,7 +482,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               className={`
                 w-full pl-12 pr-14 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
                 placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
-                ${errors.password ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
+                ${errors.password ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14] neon-focus-glow focus:bg-white/[0.04]'}
               `}
             />
             <button
@@ -552,7 +566,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               className={`
                 w-full pl-12 pr-14 py-3.5 min-h-[48px] bg-white/[0.01] border rounded-xl text-base sm:text-sm text-slate-100
                 placeholder-slate-500 focus:outline-none transition-all duration-300 font-sans
-                ${errors.confirmPassword || (passwordsMatch === false) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14]/50 focus:bg-white/[0.04]'}
+                ${errors.confirmPassword || (passwordsMatch === false) ? 'border-red-500/40 focus:border-red-500' : 'border-white/10 focus:border-[#39FF14] neon-focus-glow focus:bg-white/[0.04]'}
               `}
             />
             <button

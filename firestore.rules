@@ -22,10 +22,20 @@ service cloud.firestore {
       allow write: if isOwner(userId);
     }
 
+    // OTP verification tokens & records
+    match /otp_verifications/{docId} {
+      allow read, write: if true;
+    }
+
     // Course Catalogue rules (read allowed for discovery, write allowed for authenticated setup/seeds)
     match /courses/{courseId} {
-      allow read: if true;
+      allow read, get, list: if true;
       allow write: if isSignedIn();
+
+      match /{allChildren=**} {
+        allow read, get, list: if true;
+        allow write: if isSignedIn();
+      }
     }
 
     // Slide banner advertisement rules
@@ -46,7 +56,14 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
-    // Student reviews submitted for courses
+    // Student reviews submitted for courses (collection: "reviews")
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+
+    // Legacy student reviews
     match /courseReviews/{reviewId} {
       allow read: if true;
       allow write: if isSignedIn();
@@ -220,11 +237,9 @@ service cloud.firestore {
 
     // Certificate and Course Completion System rules
     match /certificates/{certificateId} {
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && resource.data.userId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if true;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
     match /certificateTemplates/{templateId} {
@@ -247,25 +262,21 @@ service cloud.firestore {
 
     // Premium Notifications & Announcement System rules
     match /notifications/{notificationId} {
-      allow read, list, get: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow read, list, get: if true;
+      allow create, update, delete: if true;
     }
 
     match /announcements/{announcementId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read, list, get: if true;
+      allow write: if true;
     }
 
     match /notificationSettings/{userId} {
-      allow read: if isOwner(userId);
-      allow write: if isOwner(userId);
+      allow read, write: if true;
     }
 
     match /notificationHistory/{historyId} {
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read, write: if true;
     }
 
     // Premium Live Classes System rules
@@ -368,6 +379,41 @@ service cloud.firestore {
         allow create: if isSignedIn();
         allow update, delete: if false; // Messages are immutable
       }
+    }
+
+    // Support Tickets collection rules (Student & Admin Quick Support)
+    match /support_tickets/{ticketId} {
+      allow read, list, get: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        request.auth.email == 'wahid23hasan@gmail.com' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']
+      );
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        request.auth.email == 'wahid23hasan@gmail.com' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']
+      );
+    }
+
+    // Refund requests
+    match /refund_requests/{requestId} {
+      allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.email == 'wahid23hasan@gmail.com');
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && request.auth.email == 'wahid23hasan@gmail.com';
+    }
+
+    // Instructor Payout requests
+    match /payout_requests/{payoutId} {
+      allow create: if request.auth != null;
+      allow read: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+
+    // System settings and Maintenance Mode rules (Real-time public read)
+    match /settings/{document=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
   }
 }

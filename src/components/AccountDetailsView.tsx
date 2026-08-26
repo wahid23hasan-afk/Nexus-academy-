@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, User, Mail, Hash, Calendar, Shield, MapPin, CheckCircle2, Clock, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, User, Mail, Hash, Calendar, Shield, MapPin, CheckCircle2, Clock, ShieldCheck, Copy, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { auth } from '../services/firebase';
 import { courseService } from '../services/courseService';
@@ -12,6 +12,13 @@ interface AccountDetailsViewProps {
 
 export const AccountDetailsView: React.FC<AccountDetailsViewProps> = ({ onBack, userProfile }) => {
   const [approvalStatus, setApprovalStatus] = useState<'Approved' | 'Pending' | 'Rejected'>('Approved');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, type: 'email' | 'id') => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(type);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   useEffect(() => {
     const checkApprovalStatus = async () => {
@@ -76,8 +83,8 @@ export const AccountDetailsView: React.FC<AccountDetailsViewProps> = ({ onBack, 
         
         <div className="flex flex-col items-center mb-8 relative z-10">
           <div className="w-24 h-24 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-[#39FF14]/30 flex items-center justify-center overflow-hidden mb-3 shadow-[0_0_15px_rgba(57,255,20,0.1)]">
-            {userProfile?.photoURL ? (
-              <img src={userProfile.photoURL || undefined} alt="Avatar" className="w-full h-full object-cover" />
+            {userProfile?.photoURL?.trim() ? (
+              <img src={userProfile.photoURL.trim()} alt="Avatar" className="w-full h-full object-cover" />
             ) : (
               <User size={40} className="text-[#39FF14]" />
             )}
@@ -144,17 +151,30 @@ export const AccountDetailsView: React.FC<AccountDetailsViewProps> = ({ onBack, 
                 <span className="text-sm font-medium text-slate-200">{userProfile?.email || 'Registered Email'}</span>
               </div>
             </div>
-            <Shield size={14} className="text-emerald-400" />
+            <button
+              onClick={() => copyToClipboard(userProfile?.email || '', 'email')}
+              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+            >
+              {copiedId === 'email' ? <Check size={14} className="text-[#39FF14]" /> : <Copy size={14} className="text-slate-400" />}
+            </button>
           </div>
 
-          <div className="bg-slate-900/50 rounded-xl p-4 flex items-center space-x-3 border border-white/5">
-            <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400">
-              <Hash size={16} />
+          <div className="bg-slate-900/50 rounded-xl p-4 flex items-center justify-between border border-white/5">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400">
+                <Hash size={16} />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs text-slate-500">Student ID</span>
+                <span className="text-sm font-mono text-slate-200">{userProfile?.uid?.slice(0,8).toUpperCase() || 'NEXUS-01'}</span>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="text-xs text-slate-500">Student ID</span>
-              <span className="text-sm font-mono text-slate-200">{userProfile?.uid?.slice(0,8).toUpperCase() || 'NEXUS-01'}</span>
-            </div>
+            <button
+              onClick={() => copyToClipboard(userProfile?.uid?.slice(0,8).toUpperCase() || 'NEXUS-01', 'id')}
+              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+            >
+              {copiedId === 'id' ? <Check size={14} className="text-[#39FF14]" /> : <Copy size={14} className="text-slate-400" />}
+            </button>
           </div>
 
           <div className="bg-slate-900/50 rounded-xl p-4 flex items-center space-x-3 border border-white/5">

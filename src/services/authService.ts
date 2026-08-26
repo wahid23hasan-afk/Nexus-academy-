@@ -26,6 +26,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from './firebase';
 import { User } from '../types/auth';
+import { offlineStorageService } from './offlineStorageService';
 
 export const authService = {
   // Check if user returned from Google signInWithRedirect
@@ -43,16 +44,23 @@ export const authService = {
     return null;
   },
   // Query Firestore to check if a username is already taken
-  async isUsernameTaken(username: string): Promise<boolean> {
+  async isUsernameTaken(username: string, excludeUid?: string): Promise<boolean> {
     try {
+      const cleanUsername = username.toLowerCase().trim();
+      if (!cleanUsername) return false;
       const q = query(
         collection(db, 'users'), 
-        where('username', '==', username.toLowerCase().trim())
+        where('username', '==', cleanUsername)
       );
       const querySnapshot = await getDocs(q);
-      return !querySnapshot.empty;
+      if (querySnapshot.empty) return false;
+      if (excludeUid) {
+        const otherUserDocs = querySnapshot.docs.filter((doc) => doc.id !== excludeUid);
+        return otherUserDocs.length > 0;
+      }
+      return true;
     } catch (error) {
-      console.warn('Username uniqueness check skipped due to permissions.');
+      console.warn('Username uniqueness check skipped due to permissions or offline:', error);
       // Fallback: assume false so we don't block registration if Firestore is loading rules
       return false;
     }
@@ -486,9 +494,13 @@ export const authService = {
         };
         await setDoc(docRef, updateData, { merge: true });
 
+        const resolvedProfile = { ...existingData, ...updateData };
+        // Cache basic profile locally via IndexedDB
+        offlineStorageService.cacheUserProfile(resolvedProfile).catch(console.warn);
+
         return {
           profileCompleted: !!existingData.profileCompleted,
-          data: { ...existingData, ...updateData },
+          data: resolvedProfile,
         };
       } else {
         // First login and no profile exists: Create one!
@@ -510,13 +522,24 @@ export const authService = {
         };
 
         await setDoc(docRef, initialProfile);
+        offlineStorageService.cacheUserProfile(initialProfile).catch(console.warn);
+
         return {
           profileCompleted: false,
           data: initialProfile,
         };
       }
     } catch (error) {
-      console.warn('Error in checkAndInitializeProfile (permissions):', error);
+      console.warn('Error in checkAndInitializeProfile (permissions/offline):', error);
+      // Attempt to retrieve cached profile from IndexedDB
+      const cachedProfile = await offlineStorageService.getCachedUserProfile(user.uid);
+      if (cachedProfile) {
+        return {
+          profileCompleted: !!cachedProfile.profileCompleted,
+          data: cachedProfile,
+        };
+      }
+
       return {
         profileCompleted: false,
         data: { uid: user.uid, email: user.email, profileCompleted: false },
@@ -560,12 +583,28 @@ export const authService = {
       }
 
       const docRef = doc(db, 'users', uid);
-      await setDoc(docRef, {
+      const updatedProfile = {
         ...profileData,
+        uid,
         username: usernameLower,
         profileCompleted: true,
         updatedAt: serverTimestamp(),
-      }, { merge: true });
+      };
+
+      await setDoc(docRef, updatedProfile, { merge: true });
+      offlineStorageService.cacheUserProfile(updatedProfile).catch(console.warn);
+
+      // Synchronize Firebase Auth displayName and photoURL
+      if (auth.currentUser && auth.currentUser.uid === uid) {
+        try {
+          await updateProfile(auth.currentUser, {
+            displayName: profileData.fullName,
+            photoURL: profileData.photoURL || auth.currentUser.photoURL || undefined
+          });
+        } catch (authErr) {
+          console.warn('Could not update Firebase Auth user profile:', authErr);
+        }
+      }
 
       return { success: true };
     } catch (error: any) {
@@ -574,16 +613,43 @@ export const authService = {
     }
   },
 
-  // Upload profile photo to Firebase Storage
+  // Upload profile photo to Firebase Storage with resilient timeout & fallback
   async uploadProfilePicture(uid: string, blob: Blob): Promise<string> {
+    const blobToDataUrl = (b: Blob): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(b);
+      });
+    };
+
     try {
       const storageRef = ref(storage, `users/${uid}/profile_pic.jpg`);
-      const snapshot = await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(snapshot.ref);
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Storage upload timeout')), 3500)
+      );
+      
+      const snapshot = await Promise.race([
+        uploadBytes(storageRef, blob),
+        timeoutPromise
+      ]) as any;
+
+      const downloadURL = await Promise.race([
+        getDownloadURL(snapshot.ref),
+        timeoutPromise
+      ]) as string;
+
       return downloadURL;
     } catch (error) {
-      console.warn('Firebase Storage upload failed:', error);
-      throw error;
+      console.warn('Firebase Storage upload failed or timed out, returning compressed base64 fallback:', error);
+      try {
+        const dataUrl = await blobToDataUrl(blob);
+        return dataUrl;
+      } catch (convErr) {
+        console.warn('Base64 fallback conversion failed:', convErr);
+        return '';
+      }
     }
   }
 };

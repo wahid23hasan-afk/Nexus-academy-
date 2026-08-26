@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, Send, Bot, User, Trash2, RotateCw, Copy, Check, MessageSquare, 
-  Sparkles, History, Mic, Image as ImageIcon, PlusCircle, Maximize2, Minimize2, ChevronLeft, Camera, ArrowLeft
+  Sparkles, History, Mic, Image as ImageIcon, PlusCircle, Maximize2, Minimize2, ChevronLeft, Camera, ArrowLeft,
+  ChevronDown, HelpCircle
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -55,8 +58,10 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
   
   const [isFullscreen, setIsFullscreen] = useState(true);
 
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+  const isAutoScrollEnabledRef = useRef<boolean>(true);
+
   // Suggested Prompts
   const suggestedPrompts = [
     "Summarize my recent course",
@@ -73,13 +78,30 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
     }
   }, []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // Stable scroll to bottom helper
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (!isAutoScrollEnabledRef.current) return;
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior
+      });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior });
+    }
   };
+
+  // Handle user scroll detection so AI messages don't jump/jitter if user wants to read top messages
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    const isNearBottom = scrollHeight - (scrollTop + clientHeight) < 100;
+    isAutoScrollEnabledRef.current = isNearBottom;
+  };
+
+  useEffect(() => {
+    scrollToBottom(isLoading ? 'auto' : 'smooth');
+  }, [messages.length, isLoading]);
 
   const loadEnrolledCourses = async () => {
     if (!auth.currentUser) return;
@@ -367,41 +389,48 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
     }
   };
 
-  return (
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  return createPortal(
     <motion.div 
-      initial={{ opacity: 0, scale: 0.95, y: 15 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95, y: 15 }}
-      className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[100] w-screen h-[100dvh] top-0 left-0 bg-[#060a14] flex flex-col overflow-hidden select-text"
     >
-      <div className="w-full max-w-3xl h-[85vh] sm:h-[80vh] max-h-[720px] bg-[#0a0f1d] border border-[#39FF14]/30 rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_15px_50px_rgba(0,0,0,0.9)] flex flex-col md:flex-row transition-all duration-300 relative">
+      <div className="w-full h-full flex flex-col md:flex-row overflow-hidden relative">
         
         {/* Sidebar History */}
-        <div className={`w-64 bg-slate-950/95 border-r border-white/10 flex flex-col transition-all duration-300 absolute md:relative z-20 h-full ${showHistory ? 'left-0' : '-left-full md:left-0'}`}>
+        <div className={`w-72 bg-slate-950/95 border-r border-white/10 flex flex-col transition-all duration-300 absolute md:relative z-20 h-full shrink-0 ${showHistory ? 'left-0' : '-left-full md:left-0'}`}>
           <div className="p-4 border-b border-white/10 flex justify-between items-center bg-slate-950">
             <h3 className="text-sm font-bold text-white flex items-center space-x-2">
               <History size={16} className="text-[#39FF14]" />
               <span>Chat History</span>
             </h3>
-            <button onClick={() => setShowHistory(false)} className="md:hidden text-slate-400 hover:text-white cursor-pointer">
+            <button onClick={() => setShowHistory(false)} className="md:hidden text-slate-400 hover:text-white cursor-pointer p-1">
               <X size={16} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1 no-scrollbar">
+          <div className="flex-1 overflow-y-auto p-3 space-y-1 no-scrollbar">
             <button 
               onClick={createNewSession}
-              className="w-full flex items-center space-x-2 p-3 rounded-xl bg-[#39FF14]/10 text-[#39FF14] hover:bg-[#39FF14]/20 border border-[#39FF14]/20 transition-all font-semibold text-xs mb-4 cursor-pointer"
+              className="w-full flex items-center space-x-2 p-3 rounded-xl bg-[#39FF14]/10 text-[#39FF14] hover:bg-[#39FF14]/20 border border-[#39FF14]/30 transition-all font-semibold text-xs mb-3 cursor-pointer shadow-sm"
             >
-              <PlusCircle size={14} />
+              <PlusCircle size={15} />
               <span>New Conversation</span>
             </button>
             {historySessions.map(session => (
               <button
                 key={session.id}
                 onClick={() => loadSession(session.id)}
-                className={`w-full text-left p-3 rounded-xl text-xs font-sans transition-all truncate flex items-center space-x-2 cursor-pointer ${currentSessionId === session.id ? 'bg-white/10 text-white font-bold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
+                className={`w-full text-left p-3 rounded-xl text-xs font-sans transition-all truncate flex items-center space-x-2 cursor-pointer ${currentSessionId === session.id ? 'bg-white/10 text-white font-bold border border-white/15' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
               >
-                <MessageSquare size={12} className="shrink-0" />
+                <MessageSquare size={13} className="shrink-0" />
                 <span className="truncate">{session.title}</span>
               </button>
             ))}
@@ -411,40 +440,40 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col h-full bg-[#0a0f1d] relative z-10 overflow-hidden">
           {/* Header */}
-          <div className="h-16 border-b border-white/10 flex items-center justify-between px-3 sm:px-4 bg-slate-950 flex-shrink-0 gap-2">
-            <div className="flex items-center space-x-2 shrink-0">
+          <div className="h-16 border-b border-white/10 flex items-center justify-between px-3 sm:px-6 bg-slate-950 flex-shrink-0 gap-2 shadow-sm">
+            <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
               {/* Back Button */}
               <button 
                 onClick={onClose}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-white/10 hover:bg-[#39FF14]/20 hover:text-[#39FF14] text-slate-100 rounded-xl font-bold text-xs transition-all border border-white/15 hover:border-[#39FF14]/40 cursor-pointer shadow-sm active:scale-95 shrink-0"
-                title="Go Back"
+                className="flex items-center space-x-2 px-3 sm:px-4 py-2 bg-white/10 hover:bg-[#39FF14]/20 hover:text-[#39FF14] text-white rounded-xl font-bold text-xs sm:text-sm transition-all border border-white/20 hover:border-[#39FF14]/50 cursor-pointer shadow-sm active:scale-95 shrink-0"
+                title="Go Back to Courses"
               >
-                <ArrowLeft size={16} />
+                <ArrowLeft size={18} />
                 <span className="font-sans font-bold">Back</span>
               </button>
 
               {/* History button for mobile */}
               <button 
                 onClick={() => setShowHistory(!showHistory)}
-                className="md:hidden p-2 bg-white/5 rounded-xl text-slate-300 hover:text-white shrink-0 border border-white/10"
+                className="md:hidden p-2 bg-white/5 rounded-xl text-slate-300 hover:text-white shrink-0 border border-white/10 cursor-pointer"
                 title="History"
               >
-                <History size={16} />
+                <History size={18} />
               </button>
 
               {/* AI Badge & Title */}
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-xl bg-[#39FF14]/15 border border-[#39FF14]/40 flex items-center justify-center shrink-0">
-                  <Sparkles size={16} className="text-[#39FF14]" />
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#39FF14]/15 border border-[#39FF14]/40 flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(57,255,20,0.15)]">
+                  <Sparkles size={18} className="text-[#39FF14]" />
                 </div>
                 <div className="hidden sm:block">
-                  <h2 className="text-xs font-bold text-white flex items-center space-x-1.5">
-                    <span className="truncate max-w-[130px] lg:max-w-none">Nexus AI Control</span>
-                    <span className="text-[8px] bg-[#39FF14]/20 text-[#39FF14] px-1.5 py-0.5 rounded uppercase font-mono font-bold tracking-wider">Active</span>
+                  <h2 className="text-sm font-bold text-white flex items-center space-x-2">
+                    <span className="truncate max-w-[160px] lg:max-w-none">Nexus AI Assistant</span>
+                    <span className="text-[9px] bg-[#39FF14]/20 text-[#39FF14] px-2 py-0.5 rounded uppercase font-mono font-bold tracking-wider border border-[#39FF14]/30">Active</span>
                   </h2>
                   <div className="flex items-center space-x-1.5 mt-0.5">
-                    <span className="w-1.5 h-1.5 bg-[#39FF14] rounded-full animate-pulse"></span>
-                    <span className="text-[9px] text-slate-400 font-mono">System Execution</span>
+                    <span className="w-2 h-2 bg-[#39FF14] rounded-full animate-pulse"></span>
+                    <span className="text-[10px] text-slate-400 font-mono">Full Page Matrix</span>
                   </div>
                 </div>
               </div>
@@ -455,10 +484,10 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
                   createNewSession();
                   onShowNotification('New AI Chat session opened', 'success');
                 }}
-                className="flex items-center space-x-1 px-2.5 py-1.5 bg-[#39FF14]/20 hover:bg-[#39FF14]/30 text-[#39FF14] rounded-xl font-bold text-xs transition-all border border-[#39FF14]/40 cursor-pointer shadow-sm active:scale-95 shrink-0"
+                className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 bg-[#39FF14]/20 hover:bg-[#39FF14]/30 text-[#39FF14] rounded-xl font-bold text-xs transition-all border border-[#39FF14]/40 cursor-pointer shadow-sm active:scale-95 shrink-0"
                 title="Open New AI Chat Tab"
               >
-                <PlusCircle size={16} />
+                <PlusCircle size={15} />
                 <span className="font-sans font-bold">New Chat</span>
               </button>
             </div>
@@ -467,7 +496,7 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
               <select 
                 value={selectedCourseId}
                 onChange={(e) => setSelectedCourseId(e.target.value)}
-                className="bg-slate-900 border border-white/10 text-slate-300 text-[10px] sm:text-xs rounded-xl px-2 py-1.5 focus:outline-none focus:border-[#39FF14]/50 max-w-[100px] sm:max-w-[150px] truncate cursor-pointer"
+                className="bg-slate-900 border border-white/10 text-slate-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-[#39FF14]/50 max-w-[130px] sm:max-w-[200px] truncate cursor-pointer"
               >
                 <option value="all">General Context</option>
                 {enrolledCourses.map(c => (
@@ -484,15 +513,19 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
             </div>
           </div>
 
-          {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scroll-smooth">
+          {/* Messages Area - Full Page Container */}
+          <div 
+            ref={messagesContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6 max-w-5xl w-full mx-auto"
+          >
             {messages.length === 1 && messages[0].id === 'welcome-msg' && (
-              <div className="flex flex-wrap gap-2 mt-6 justify-center">
+              <div className="flex flex-wrap gap-2.5 my-8 justify-center max-w-2xl mx-auto">
                 {suggestedPrompts.map((prompt, i) => (
                   <button
                     key={i}
                     onClick={() => handleSend(prompt)}
-                    className="px-4 py-2 bg-white/5 border border-white/10 hover:border-[#39FF14]/50 rounded-full text-xs text-slate-300 hover:text-[#39FF14] transition-all"
+                    className="px-4 py-2.5 bg-white/5 border border-white/10 hover:border-[#39FF14]/50 hover:bg-white/10 rounded-full text-xs text-slate-300 hover:text-[#39FF14] transition-all cursor-pointer shadow-sm"
                   >
                     {prompt}
                   </button>
@@ -501,21 +534,19 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
             )}
 
             {messages.map((msg, i) => (
-              <motion.div 
+              <div 
                 key={msg.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div className={`flex max-w-[85%] sm:max-w-[75%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                  <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'user' ? 'bg-slate-800 ml-3' : 'bg-[#39FF14]/10 border border-[#39FF14]/30 mr-3'}`}>
-                    {msg.role === 'user' ? <User size={14} className="text-white" /> : <Bot size={16} className="text-[#39FF14]" />}
+                <div className={`flex max-w-[90%] sm:max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                  <div className={`shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center ${msg.role === 'user' ? 'bg-slate-800 ml-3' : 'bg-[#39FF14]/10 border border-[#39FF14]/30 mr-3'}`}>
+                    {msg.role === 'user' ? <User size={15} className="text-white" /> : <Bot size={17} className="text-[#39FF14]" />}
                   </div>
                   
                   <div className="flex flex-col space-y-1">
-                    <div className={`p-4 rounded-2xl ${
+                    <div className={`p-4 sm:p-5 rounded-2xl ${
                       msg.role === 'user' 
-                        ? 'bg-slate-800 text-white rounded-tr-sm' 
+                        ? 'bg-slate-800 text-white rounded-tr-sm shadow-md' 
                         : 'glass-panel-light text-slate-200 rounded-tl-sm shadow-lg'
                     }`}>
                       {msg.role === 'user' ? (
@@ -523,18 +554,24 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
                           {msg.images && msg.images.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-2">
                               {msg.images.map((img, idx) => (
-                                <img key={idx} src={img || undefined} alt="User Upload" className="max-w-[120px] max-h-[120px] rounded-lg border border-white/10" />
+                                <img key={idx} src={img?.trim() || undefined} alt="User Upload" className="max-w-[140px] max-h-[140px] rounded-lg border border-white/10" />
                               ))}
                             </div>
                           )}
                           <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
                         </div>
                       ) : (
-                        <div className="prose prose-invert prose-sm max-w-none text-sm">
+                        <div className="prose prose-invert prose-sm max-w-none text-sm leading-relaxed">
                           <ReactMarkdown 
                             remarkPlugins={[remarkGfm, remarkMath]}
-                            rehypePlugins={[rehypeKatex]}
+                            rehypePlugins={[rehypeRaw, rehypeKatex]}
                             components={{
+                              details({ children, ...props }: any) {
+                                return <CollapsibleAiDetails {...props}>{children}</CollapsibleAiDetails>;
+                              },
+                              summary({ children, ...props }: any) {
+                                return <span className="font-bold text-slate-200" {...props}>{children}</span>;
+                              },
                               code({node, inline, className, children, ...props}: any) {
                                 const match = /language-(\w+)/.exec(className || '')
                                 return !inline && match ? (
@@ -561,20 +598,20 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
                       )}
                     </div>
                     {msg.role === 'assistant' && msg.text && (
-                      <div className="flex items-center space-x-2 pl-1">
+                      <div className="flex items-center space-x-3 pl-1 pt-1">
                         <button 
                           onClick={() => handleCopy(msg.id, msg.text)}
-                          className="text-slate-500 hover:text-slate-300 p-1 flex items-center space-x-1 transition-colors"
+                          className="text-slate-500 hover:text-slate-300 p-1 flex items-center space-x-1 transition-colors cursor-pointer"
                         >
-                          {isCopied === msg.id ? <Check size={12} className="text-[#39FF14]" /> : <Copy size={12} />}
+                          {isCopied === msg.id ? <Check size={13} className="text-[#39FF14]" /> : <Copy size={13} />}
                           <span className="text-[10px] font-mono">{isCopied === msg.id ? 'Copied' : 'Copy'}</span>
                         </button>
                         {i === messages.length - 1 && !isLoading && (
                           <button 
                             onClick={handleRegenerate}
-                            className="text-slate-500 hover:text-[#39FF14] p-1 flex items-center space-x-1 transition-colors"
+                            className="text-slate-500 hover:text-[#39FF14] p-1 flex items-center space-x-1 transition-colors cursor-pointer"
                           >
-                            <RotateCw size={12} />
+                            <RotateCw size={13} />
                             <span className="text-[10px] font-mono">Regenerate</span>
                           </button>
                         )}
@@ -582,14 +619,14 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
                     )}
                   </div>
                 </div>
-              </motion.div>
+              </div>
             ))}
             
             {isLoading && (
               <div className="flex justify-start">
                 <div className="flex max-w-[85%] flex-row">
-                  <div className="shrink-0 w-8 h-8 rounded-full bg-[#39FF14]/10 border border-[#39FF14]/30 mr-3 flex items-center justify-center">
-                    <Bot size={16} className="text-[#39FF14]" />
+                  <div className="shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-[#39FF14]/10 border border-[#39FF14]/30 mr-3 flex items-center justify-center">
+                    <Bot size={17} className="text-[#39FF14]" />
                   </div>
                   <div className="glass-panel-light p-4 rounded-2xl rounded-tl-sm flex items-center space-x-2">
                     <span className="w-1.5 h-1.5 bg-[#39FF14] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
@@ -604,11 +641,11 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
 
           {/* Input Area */}
           {selectedImages.length > 0 && (
-            <div className="px-4 py-2 bg-slate-900 border-t border-white/10 flex gap-2 overflow-x-auto">
+            <div className="px-4 py-2 bg-slate-900 border-t border-white/10 flex gap-2 overflow-x-auto max-w-5xl w-full mx-auto">
               {selectedImages.map((img, idx) => (
                 <div key={idx} className="relative w-16 h-16 shrink-0 rounded-lg overflow-hidden border border-white/10">
-                  <img src={img || undefined} alt="upload preview" className="w-full h-full object-cover" />
-                  <button onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-black/50 p-1 rounded-full text-white hover:text-red-400">
+                  <img src={img?.trim() || undefined} alt="upload preview" className="w-full h-full object-cover" />
+                  <button onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-black/50 p-1 rounded-full text-white hover:text-red-400 cursor-pointer">
                     <X size={10} />
                   </button>
                 </div>
@@ -623,50 +660,119 @@ export function AiChatView({ onClose, userProfile, onShowNotification }: AiChatV
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={handleImageSelect} />
           <input type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleImageSelect} />
 
-          <div className="p-4 bg-slate-950/80 border-t border-white/10 backdrop-blur-md">
-            <div className="relative flex items-end bg-slate-900 border border-white/10 rounded-2xl focus-within:border-[#39FF14]/50 focus-within:shadow-[0_0_15px_rgba(57,255,20,0.1)] transition-all overflow-hidden p-1">
-              <div className="flex p-2 space-x-1 text-slate-400">
-                <button onClick={() => fileInputRef.current?.click()} className="p-1.5 hover:text-white hover:bg-white/5 rounded-lg transition-all text-slate-400 hover:text-[#39FF14]" title="Upload Image">
-                  <ImageIcon size={18} />
-                </button>
-                <button onClick={() => cameraInputRef.current?.click()} className="p-1.5 hover:text-white hover:bg-white/5 rounded-lg transition-all text-slate-400 hover:text-[#39FF14]" title="Take Photo">
-    <Camera size={18} />
-  </button>
+          <div className="p-4 sm:p-6 bg-slate-950/90 border-t border-white/10 backdrop-blur-md">
+            <div className="max-w-5xl mx-auto">
+              <div className="relative flex items-end bg-slate-900 border border-white/15 rounded-2xl focus-within:border-[#39FF14]/50 focus-within:shadow-[0_0_20px_rgba(57,255,20,0.12)] transition-all overflow-hidden p-1.5">
+                <div className="flex p-2 space-x-1 text-slate-400">
+                  <button onClick={() => fileInputRef.current?.click()} className="p-2 hover:text-white hover:bg-white/5 rounded-lg transition-all text-slate-400 hover:text-[#39FF14] cursor-pointer" title="Upload Image">
+                    <ImageIcon size={20} />
+                  </button>
+                  <button onClick={() => cameraInputRef.current?.click()} className="p-2 hover:text-white hover:bg-white/5 rounded-lg transition-all text-slate-400 hover:text-[#39FF14] cursor-pointer" title="Take Photo">
+                    <Camera size={20} />
+                  </button>
+                </div>
+                
+                <textarea 
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder="Ask Nexus AI about courses, quiz prep, code debug, or study planning..."
+                  className="flex-1 bg-transparent border-none focus:outline-none text-sm text-white resize-none py-3 px-2 max-h-36 placeholder-slate-500 font-sans"
+                  rows={1}
+                  style={{ minHeight: '44px' }}
+                />
+                
+                <div className="p-2">
+                  <button 
+                    onClick={() => handleSend()}
+                    disabled={(!input.trim() && selectedImages.length === 0) || isLoading || isUploading}
+                    className={`p-3 rounded-xl flex items-center justify-center transition-all ${(input.trim() || selectedImages.length > 0) && !isLoading ? 'bg-[#39FF14] text-black shadow-[0_0_15px_rgba(57,255,20,0.3)] cursor-pointer hover:scale-105 active:scale-95' : 'bg-white/5 text-slate-500 cursor-not-allowed'}`}
+                  >
+                    <Send size={18} className={(input.trim() || selectedImages.length > 0) && !isLoading ? 'translate-x-0.5' : ''} />
+                  </button>
+                </div>
               </div>
-              
-              <textarea 
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="Tell AI to perform an action..."
-                className="flex-1 bg-transparent border-none focus:outline-none text-sm text-white resize-none py-3 px-2 max-h-32 placeholder-slate-500 font-sans"
-                rows={1}
-                style={{ minHeight: '44px' }}
-              />
-              
-              <div className="p-2">
-                <button 
-                  onClick={() => handleSend()}
-                  disabled={(!input.trim() && selectedImages.length === 0) || isLoading || isUploading}
-                  className={`p-2.5 rounded-xl flex items-center justify-center transition-all ${(input.trim() || selectedImages.length > 0) && !isLoading ? 'bg-[#39FF14] text-black shadow-[0_0_15px_rgba(57,255,20,0.3)] cursor-pointer hover:scale-105' : 'bg-white/5 text-slate-500 cursor-not-allowed'}`}
-                >
-                  <Send size={16} className={(input.trim() || selectedImages.length > 0) && !isLoading ? 'translate-x-0.5' : ''} />
-                </button>
+              <div className="text-center mt-2.5">
+                <p className="text-[10px] text-slate-500 font-mono">
+                  Nexus AI assistant is grounded with course content. Always verify key concepts.
+                </p>
               </div>
-            </div>
-            <div className="text-center mt-2">
-              <p className="text-[9px] text-slate-500 font-mono">
-                Nexus AI can make mistakes. Consider verifying important academic information.
-              </p>
             </div>
           </div>
         </div>
       </div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 }
+
+// Sleek Interactive Collapsible Markdown <details>/<summary> Component
+function CollapsibleAiDetails({ children, ...props }: React.HTMLAttributes<HTMLDetailsElement>) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  // Separate summary child and body content
+  const childrenArray = React.Children.toArray(children);
+  const summaryChild = childrenArray.find(
+    (child: any) =>
+      React.isValidElement(child) &&
+      (child.type === 'summary' ||
+        (child.props as any)?.node?.tagName === 'summary' ||
+        child.type === 'span')
+  );
+
+  const bodyChildren = childrenArray.filter(
+    (child: any) =>
+      !(
+        React.isValidElement(child) &&
+        (child.type === 'summary' ||
+          (child.props as any)?.node?.tagName === 'summary' ||
+          child.type === 'span')
+      )
+  );
+
+  return (
+    <div className="my-3 rounded-2xl border border-[#39FF14]/30 bg-[#060c18]/90 overflow-hidden shadow-[0_0_20px_rgba(57,255,20,0.08)] backdrop-blur-md transition-all">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-3.5 bg-white/[0.03] hover:bg-[#39FF14]/10 text-left transition-colors cursor-pointer group select-none"
+      >
+        <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+          <div className="w-6 h-6 rounded-lg bg-[#39FF14]/15 border border-[#39FF14]/40 flex items-center justify-center text-[#39FF14] shrink-0 text-xs shadow-sm">
+            <Sparkles size={12} />
+          </div>
+          <div className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-[#39FF14] transition-colors truncate">
+            {summaryChild ? summaryChild : 'Click to Reveal Answer / উত্তর দেখতে ক্লিক করুন'}
+          </div>
+        </div>
+        <div className="flex items-center space-x-1.5 shrink-0 text-[#39FF14] text-[11px] font-mono font-semibold bg-[#39FF14]/10 px-2 py-0.5 rounded-full border border-[#39FF14]/20">
+          <span>{isOpen ? 'লুকান (Hide)' : 'উত্তর দেখুন (Reveal)'}</span>
+          <ChevronDown
+            size={14}
+            className={`transition-transform duration-300 ${isOpen ? 'rotate-180 text-[#39FF14]' : 'text-slate-400 group-hover:text-[#39FF14]'}`}
+          />
+        </div>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            className="overflow-hidden border-t border-white/10 bg-black/40 p-4 text-xs sm:text-sm text-slate-200 leading-relaxed font-sans"
+          >
+            {bodyChildren.length > 0 ? bodyChildren : children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Bell, 
@@ -29,8 +30,9 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { Notification, NotificationCategory, NotificationType, NotificationSetting } from '../types/notification';
-import { notificationService } from '../services/notificationService';
+import { notificationService, getSafeTimestamp } from '../services/notificationService';
 import { auth } from '../services/firebase';
+import { EliteLoading } from './EliteLoading';
 
 interface NotificationCenterProps {
   isOpen: boolean;
@@ -114,8 +116,8 @@ export function NotificationCenter({
 
   // Subscribe to real-time notifications from Firestore
   useEffect(() => {
-    const effectiveUserId = userId || auth.currentUser?.uid || userProfile?.username || 'guest_user';
-    const effectiveEmail = auth.currentUser?.email || userProfile?.username || undefined;
+    const effectiveUserId = userId || auth.currentUser?.uid || (userProfile as any)?.uid || userProfile?.username || 'guest_user';
+    const effectiveEmail = auth.currentUser?.email || (userProfile as any)?.email || userProfile?.username || undefined;
     const effectiveName = userProfile?.fullName || auth.currentUser?.displayName || undefined;
 
     setLoading(true);
@@ -159,6 +161,8 @@ export function NotificationCenter({
   // Mark single as read
   const handleMarkRead = async (notif: Notification) => {
     if (!notif.unread) return;
+    // Optimistic local state update
+    setNotifications(prev => prev.map(n => n.notificationId === notif.notificationId ? { ...n, unread: false } : n));
     const effectiveEmail = auth.currentUser?.email || userProfile?.username || undefined;
     const effectiveUid = userId || auth.currentUser?.uid || userProfile?.username || 'guest_user';
     try {
@@ -176,6 +180,9 @@ export function NotificationCenter({
     }));
     if (unreadNotifs.length === 0) return;
     
+    // Optimistic local state update immediately
+    setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+
     const effectiveEmail = auth.currentUser?.email || userProfile?.username || undefined;
     const effectiveUid = userId || auth.currentUser?.uid || userProfile?.username || 'guest_user';
 
@@ -192,6 +199,8 @@ export function NotificationCenter({
 
   // Delete notification
   const handleDeleteNotif = async (id: string) => {
+    // Optimistic local state update
+    setNotifications(prev => prev.filter(n => n.notificationId !== id));
     try {
       await notificationService.deleteNotification(id);
       onShowNotification('Notification cleared.', 'success');
@@ -288,27 +297,35 @@ export function NotificationCenter({
   };
 
   // Filter & Search Logic
-  const filteredNotifications = notifications.filter((n) => {
-    // 1. Filter by Category Tab
-    if (selectedCategory !== 'all') {
-      const isCurrentlyExpanded = expandedNotifId === n.notificationId;
-      if (selectedCategory === 'unread' && !n.unread && !isCurrentlyExpanded) return false;
-      if (selectedCategory === 'read' && n.unread && !isCurrentlyExpanded) return false;
-      if (selectedCategory !== 'unread' && selectedCategory !== 'read' && n.category !== selectedCategory) return false;
-    }
+  const filteredNotifications = notifications
+    .filter((n) => Boolean(n && n.notificationId && (n.title || n.message)))
+    .filter((n) => {
+      // 1. Filter by Category Tab
+      if (selectedCategory !== 'all') {
+        const isCurrentlyExpanded = expandedNotifId === n.notificationId;
+        if (selectedCategory === 'unread' && !n.unread && !isCurrentlyExpanded) return false;
+        if (selectedCategory === 'read' && n.unread && !isCurrentlyExpanded) return false;
+        if (selectedCategory !== 'unread' && selectedCategory !== 'read' && n.category !== selectedCategory) return false;
+      }
 
-    // 2. Filter by Search Query
-    if (searchQuery.trim() !== '') {
-      const q = searchQuery.toLowerCase();
-      return (
-        n.title.toLowerCase().includes(q) ||
-        n.message.toLowerCase().includes(q) ||
-        n.type.toLowerCase().includes(q)
-      );
-    }
+      // 2. Filter by Search Query
+      if (searchQuery.trim() !== '') {
+        const q = searchQuery.toLowerCase();
+        return (
+          (n.title && n.title.toLowerCase().includes(q)) ||
+          (n.message && n.message.toLowerCase().includes(q)) ||
+          (n.type && n.type.toLowerCase().includes(q))
+        );
+      }
 
-    return true;
-  });
+      return true;
+    })
+    .sort((a, b) => {
+      const timeA = getSafeTimestamp(a.createdAt, a.notificationId);
+      const timeB = getSafeTimestamp(b.createdAt, b.notificationId);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.notificationId || '').localeCompare(a.notificationId || '');
+    });
 
   const getCategoryIcon = (type: NotificationType) => {
     switch (type) {
@@ -339,11 +356,22 @@ export function NotificationCenter({
     }
   };
 
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
+      <div className="fixed inset-0 z-[100] overflow-hidden flex justify-end w-screen h-[100dvh] top-0 left-0">
         {/* Backdrop glass */}
         <motion.div 
           initial={{ opacity: 0 }}
@@ -462,17 +490,7 @@ export function NotificationCenter({
               {/* List Notifications */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-[#050912] scrollbar-thin">
                 {loading ? (
-                  /* Skeleton Loading */
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="p-3 border border-white/5 bg-white/[0.01] rounded-xl space-y-2 animate-pulse">
-                      <div className="flex justify-between">
-                        <div className="h-3 w-1/3 bg-white/10 rounded" />
-                        <div className="h-2 w-10 bg-white/10 rounded" />
-                      </div>
-                      <div className="h-2 w-full bg-white/10 rounded" />
-                      <div className="h-2 w-5/6 bg-white/10 rounded" />
-                    </div>
-                  ))
+                  <EliteLoading variant="card" compact label="SCANNING INBOX SIGNALS" subLabel="FETCHING REALTIME NOTIFICATIONS..." />
                 ) : filteredNotifications.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-48 text-center space-y-2">
                     <div className="p-3 bg-white/5 rounded-full border border-white/10 text-slate-500">
@@ -735,6 +753,7 @@ export function NotificationCenter({
           )}
         </motion.div>
       </div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

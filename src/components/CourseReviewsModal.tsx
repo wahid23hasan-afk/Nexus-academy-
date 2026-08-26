@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Star, 
@@ -11,6 +12,9 @@ import {
   Award,
   User
 } from 'lucide-react';
+
+import { courseService } from '../services/courseService';
+import { auth } from '../services/firebase';
 
 interface Review {
   id: string;
@@ -59,6 +63,7 @@ const SAMPLE_REVIEWS: Review[] = [
 interface CourseReviewsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  courseId?: string;
   courseTitle: string;
   rating: number;
   totalReviews: number;
@@ -68,6 +73,7 @@ interface CourseReviewsModalProps {
 export function CourseReviewsModal({
   isOpen,
   onClose,
+  courseId = 'general_course',
   courseTitle,
   rating,
   totalReviews,
@@ -88,37 +94,64 @@ export function CourseReviewsModal({
     onShowNotification('Liked student review!', 'success');
   };
 
-  const handleSubmitReview = (e: React.FormEvent) => {
+  const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentText.trim()) {
       onShowNotification('Please write a short review comment.', 'error');
       return;
     }
 
-    const newRev: Review = {
-      id: 'rev_' + Date.now(),
-      studentName: 'Scholar (You)',
+    const currentUser = auth.currentUser;
+    const reviewPayload = {
+      courseId: courseId || 'general_course',
+      courseTitle: courseTitle || '',
+      userId: currentUser?.uid || 'guest_student',
+      userName: currentUser?.displayName || 'Scholar (You)',
+      userEmail: currentUser?.email || '',
       rating: userRating,
-      date: 'Just now',
       comment: commentText.trim(),
-      tags: [selectedTag],
-      helpfulCount: 0,
-      verifiedStudent: true
+      status: 'approved',
+      createdAt: new Date().toISOString()
     };
 
-    setReviews(prev => [newRev, ...prev]);
-    setCommentText('');
-    setIsWriteOpen(false);
-    onShowNotification('🌟 Thank you! Your course review has been published.', 'success');
+    try {
+      const createdReview = await courseService.addReview(reviewPayload);
+
+      const newRev: Review = {
+        id: createdReview.reviewId || 'rev_' + Date.now(),
+        studentName: createdReview.studentName || 'Scholar (You)',
+        rating: userRating,
+        date: 'Just now',
+        comment: commentText.trim(),
+        tags: [selectedTag],
+        helpfulCount: 0,
+        verifiedStudent: true
+      };
+
+      setReviews(prev => [newRev, ...prev]);
+      setCommentText('');
+      setIsWriteOpen(false);
+      onShowNotification('🌟 Thank you! Your course review has been published.', 'success');
+    } catch (err) {
+      console.error('Failed to submit review:', err);
+      onShowNotification('Failed to submit review. Please try again.', 'error');
+    }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="glass-panel max-w-2xl w-full p-6 rounded-2xl border border-white/10 space-y-6 relative bg-slate-900 my-8 max-h-[90vh] flex flex-col"
+        className="glass-panel max-w-2xl w-full p-5 sm:p-6 rounded-2xl border border-white/10 space-y-6 relative bg-slate-900 max-h-[88dvh] flex flex-col my-auto z-10"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-4">
@@ -288,6 +321,7 @@ export function CourseReviewsModal({
           ))}
         </div>
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }

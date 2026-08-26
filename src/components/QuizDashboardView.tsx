@@ -139,21 +139,8 @@ export function QuizDashboardView({
     setActiveResultQuiz(activeQuiz);
     setActiveResultQuestions(activeQuestions);
 
-    // Give Gamification XP based on score
-    if (result.passed) {
-      const xpReward = Math.round(result.score * 1.5); // Example: 100 score = 150 XP
-      gamificationService.addXP(userId, xpReward, `Passed Quiz: ${activeQuiz?.title}`);
-      gamificationService.updateGoalProgress(userId, 'take_quiz', 1);
-      
-      // Check if perfectly scored
-      if (result.percentage === 100) {
-        gamificationService.unlockAchievement(userId, 'quiz_master', 'Quiz Master', `Scored 100% on ${activeQuiz?.title}`, '🎯');
-      }
-    } else {
-      // Participation XP
-      gamificationService.addXP(userId, 10, `Attempted Quiz: ${activeQuiz?.title}`);
-      gamificationService.updateGoalProgress(userId, 'take_quiz', 1);
-    }
+    // Give Gamification XP based on score using new system
+    gamificationService.recordQuizCompletion(userId, result.passed, result.percentage, activeQuiz?.title);
 
     // Reset taking state
     setActiveQuiz(null);

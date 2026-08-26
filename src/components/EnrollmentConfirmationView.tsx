@@ -104,18 +104,16 @@ export function EnrollmentConfirmationView({
     fetchCheckoutData();
   }, [course.courseId]);
 
-  // Pricing math calculation
+  // Pricing math calculation - Only original price and coupon discounts apply (no automatic campaign/launch discounts)
   const originalPrice = course.price;
   
-  // Base Course Campaign discount (Original Price - discountPrice if set)
-  const baseDiscount = course.discountPrice !== undefined ? (course.price - course.discountPrice) : 0;
-  const priceAfterBaseDiscount = course.discountPrice !== undefined ? course.discountPrice : course.price;
+  const baseDiscount = 0;
+  const priceAfterBaseDiscount = course.price;
 
-  // Active campaign offer discount (if database has active offers)
-  const activeOffer = offers.find(o => o.isActive);
-  const offerDiscount = activeOffer ? Math.round((priceAfterBaseDiscount * activeOffer.discountPercent) / 100) : 0;
+  const activeOffer = null;
+  const offerDiscount = 0;
   
-  const priceAfterOfferDiscount = priceAfterBaseDiscount - offerDiscount;
+  const priceAfterOfferDiscount = course.price;
 
   // Coupon discount deduction
   let couponDeduction = 0;
@@ -123,14 +121,14 @@ export function EnrollmentConfirmationView({
     const val = Number(appliedCoupon.discountValue ?? (appliedCoupon as any).discount ?? (appliedCoupon as any).value ?? 0);
     const type = appliedCoupon.discountType || (appliedCoupon as any).type || 'percent';
     if (type === 'percent') {
-      couponDeduction = Math.round((priceAfterOfferDiscount * val) / 100);
+      couponDeduction = Math.round((originalPrice * val) / 100);
     } else {
-      couponDeduction = Math.min(val, priceAfterOfferDiscount);
+      couponDeduction = Math.min(val, originalPrice);
     }
   }
 
   // Final price calculations
-  const finalPrice = Math.max(0, priceAfterOfferDiscount - couponDeduction);
+  const finalPrice = Math.max(0, originalPrice - couponDeduction);
 
   // Apply Coupon action
   const handleApplyCoupon = () => {
@@ -249,7 +247,7 @@ export function EnrollmentConfirmationView({
               {/* Thumbnail Container with hover scale effect */}
               <div className="shrink-0 w-20 h-20 rounded-2xl overflow-hidden border border-white/10 shadow-lg relative bg-slate-900">
                 <img 
-                  src={course.thumbnail || undefined} 
+                  src={course.thumbnail?.trim() || undefined} 
                   alt={course.title} 
                   className="w-full h-full object-cover transform hover:scale-110 transition-transform duration-300" 
                   referrerPolicy="no-referrer"

@@ -127,6 +127,17 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
     }
   };
 
+  useEffect(() => {
+    if (showAskModal || reportingPostId || showReputationInfo) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showAskModal, reportingPostId, showReputationInfo]);
+
   // 2. Fetch Replies when a post is clicked/viewed
   const handleViewPostDetails = async (post: CommunityPost) => {
     setSelectedPost(post);
@@ -313,7 +324,7 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
 
       // Update local replies count
       gamificationService.addXP(currentUser.uid, 20, "Answered Community Question");
-      gamificationService.unlockAchievement(currentUser.uid, "community_helper", "Community Helper", "Answered a question", "🤝");
+      gamificationService.unlockBadge(currentUser.uid, "community_helper", "Community Helper", "Answered a question", "🤝");
       setPosts(prev =>
         prev.map(p =>
           p.postId === selectedPost.postId ? { ...p, repliesCount: p.repliesCount + 1 } : p
@@ -358,7 +369,7 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
 
       // Update local replies count
       gamificationService.addXP(currentUser.uid, 20, "Answered Community Question");
-      gamificationService.unlockAchievement(currentUser.uid, "community_helper", "Community Helper", "Answered a question", "🤝");
+      gamificationService.unlockBadge(currentUser.uid, "community_helper", "Community Helper", "Answered a question", "🤝");
       setPosts(prev =>
         prev.map(p =>
           p.postId === selectedPost.postId ? { ...p, repliesCount: Math.max(0, p.repliesCount - 1) } : p
@@ -428,8 +439,8 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
               
               <div className="flex items-center space-x-3.5 relative">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#39FF14]/20 to-slate-900 border border-[#39FF14]/30 overflow-hidden flex items-center justify-center shadow-[0_0_12px_rgba(57,255,20,0.1)]">
-                  {userProfile?.photoURL ? (
-                    <img src={userProfile.photoURL || undefined} alt="User Avatar" className="w-full h-full object-cover" />
+                  {userProfile?.photoURL?.trim() ? (
+                    <img src={userProfile.photoURL.trim()} alt="User Avatar" className="w-full h-full object-cover" />
                   ) : (
                     <UserIcon size={20} className="text-[#39FF14]" />
                   )}
@@ -511,8 +522,8 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
               <div className="flex items-center justify-between pb-3 border-b border-white/5">
                 <div className="flex items-center space-x-3">
                   <div className="w-9 h-9 rounded-xl bg-slate-900 border border-white/10 overflow-hidden flex items-center justify-center">
-                    {selectedPost.userPhoto ? (
-                      <img src={selectedPost.userPhoto || undefined} alt="Author Avatar" className="w-full h-full object-cover" />
+                    {selectedPost.userPhoto?.trim() ? (
+                      <img src={selectedPost.userPhoto.trim()} alt="Author Avatar" className="w-full h-full object-cover" />
                     ) : (
                       <UserIcon size={14} className="text-slate-400" />
                     )}
@@ -551,10 +562,10 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
                 </p>
 
                 {/* Associated Attachment Image preview */}
-                {selectedPost.imageUrl && (
+                {selectedPost.imageUrl?.trim() && (
                   <div className="mt-4 rounded-xl overflow-hidden border border-white/10 bg-black/40 max-h-64 flex items-center justify-center">
                     <img
-                      src={selectedPost.imageUrl || undefined}
+                      src={selectedPost.imageUrl.trim()}
                       alt="Attachment Preview"
                       className="max-h-64 object-contain"
                     />
@@ -669,8 +680,8 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
 
                       <div className="flex items-center space-x-2.5 pb-2.5 border-b border-white/5 mb-3">
                         <div className="w-8 h-8 rounded-lg bg-slate-900 border border-white/5 overflow-hidden flex items-center justify-center">
-                          {reply.userPhoto ? (
-                            <img src={reply.userPhoto || undefined} alt="Reply user avatar" className="w-full h-full object-cover" />
+                          {reply.userPhoto?.trim() ? (
+                            <img src={reply.userPhoto.trim()} alt="Reply user avatar" className="w-full h-full object-cover" />
                           ) : (
                             <UserIcon size={12} className="text-slate-400" />
                           )}
@@ -916,8 +927,8 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
                       <div className="flex items-center justify-between pb-2.5 border-b border-white/5">
                         <div className="flex items-center space-x-2.5">
                           <div className="w-7 h-7 rounded-lg bg-slate-900 border border-white/10 overflow-hidden flex items-center justify-center">
-                            {post.userPhoto ? (
-                              <img src={post.userPhoto || undefined} alt="Poster Avatar" className="w-full h-full object-cover" />
+                            {post.userPhoto?.trim() ? (
+                              <img src={post.userPhoto.trim()} alt="Poster Avatar" className="w-full h-full object-cover" />
                             ) : (
                               <UserIcon size={12} className="text-slate-400" />
                             )}
@@ -1038,14 +1049,14 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
       {/* ================= MODAL 1: ASK QUESTION POPUP ================= */}
       <AnimatePresence>
         {showAskModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowAskModal(false)}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
             />
 
             {/* Modal Body */}
@@ -1053,7 +1064,7 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-950 border border-white/15 rounded-3xl p-5 shadow-2xl relative w-full max-w-md overflow-y-auto max-h-[85vh]"
+              className="bg-slate-950 border border-white/15 rounded-2xl sm:rounded-3xl p-5 shadow-2xl relative w-full max-w-md overflow-y-auto max-h-[88dvh] my-auto z-10"
             >
               <button
                 onClick={() => setShowAskModal(false)}
@@ -1186,21 +1197,21 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
       {/* ================= MODAL 2: REPORT POST REASON POPUP ================= */}
       <AnimatePresence>
         {reportingPostId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setReportingPostId(null)}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
             />
 
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-950 border border-white/15 rounded-3xl p-5 shadow-2xl relative w-full max-w-sm"
+              className="bg-slate-950 border border-white/15 rounded-2xl sm:rounded-3xl p-5 shadow-2xl relative w-full max-w-sm max-h-[88dvh] overflow-y-auto my-auto z-10"
             >
               <button
                 onClick={() => setReportingPostId(null)}
@@ -1267,20 +1278,20 @@ export function CommunityView({ userProfile, onBackToProfile, onShowNotification
       {/* ================= MODAL 3: REPUTATION INFO POPUP ================= */}
       <AnimatePresence>
         {showReputationInfo && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowReputationInfo(false)}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
             />
 
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-950 border border-white/15 rounded-3xl p-5 shadow-2xl relative w-full max-w-sm"
+              className="bg-slate-950 border border-white/15 rounded-2xl sm:rounded-3xl p-5 shadow-2xl relative w-full max-w-sm max-h-[88dvh] overflow-y-auto my-auto z-10"
             >
               <button
                 onClick={() => setShowReputationInfo(false)}

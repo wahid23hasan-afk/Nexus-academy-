@@ -1,12 +1,16 @@
 export interface Certificate {
+  id?: string;
   certificateId: string;
+  certificateNumber?: string;
   userId: string;
   studentName: string;
   courseId: string;
   courseName: string;
-  instructorName: string;
+  courseTitle?: string;
+  instructorName?: string;
   completionDate: string; // ISO String
   issueDate: string; // ISO String
+  issuedAt?: any; // Firestore timestamp
   verificationId: string; // Used to look up in verification collection
   isVerified: boolean;
   qrCodePlaceholderUrl?: string;

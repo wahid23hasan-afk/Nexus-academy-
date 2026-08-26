@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GlowBackground } from './components/GlowBackground';
+import { ClickAnimationProvider } from './components/ClickAnimationProvider';
+import { BrandLoader } from './components/BrandLoader';
 import { WelcomeView } from './components/WelcomeView';
 import { LoginView } from './components/LoginView';
 import { RegisterView } from './components/RegisterView';
@@ -9,24 +11,61 @@ import { VerificationView } from './components/VerificationView';
 import { ProfileSetupView } from './components/ProfileSetupView';
 import { CourseDiscoveryView } from './components/CourseDiscoveryView';
 import { PublicCertificateVerification } from './components/PublicCertificateVerification';
+import { AdminPanelModal } from './components/AdminPanelModal';
+import { MilestoneToastContainer } from './components/MilestoneToastContainer';
+import { MaintenanceScreen } from './components/MaintenanceScreen';
+import { StudentLayout } from './components/StudentLayout';
+import { AuthProvider } from './context/AuthContext';
 
 import { AppView } from './types/auth';
 import { auth, db } from './services/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { authService } from './services/authService';
+import { systemSettingsService, SystemSettings, DEFAULT_SYSTEM_SETTINGS } from './services/systemSettingsService';
 import { ENABLE_EMAIL_VERIFICATION } from './config';
-import { Check, X, Bell, Copy, Shield, LogOut, GraduationCap, Calendar, Mail, User as UserIcon, WifiOff } from 'lucide-react';
+import { Check, X, Bell, Copy, Shield, LogOut, GraduationCap, Calendar, Mail, User as UserIcon, WifiOff, Wrench } from 'lucide-react';
 
+
+import type { Transition } from 'motion/react';
+
+const slideAndFadeTransition: Transition = {
+  duration: 0.36,
+  ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
+};
+
+const slideFadeForward = {
+  initial: { opacity: 0, x: 24, scale: 0.98, filter: 'blur(3px)' },
+  animate: { opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' },
+  exit: { opacity: 0, x: -20, scale: 0.98, filter: 'blur(3px)' },
+  transition: slideAndFadeTransition,
+};
+
+const slideFadeBackward = {
+  initial: { opacity: 0, x: -24, scale: 0.98, filter: 'blur(3px)' },
+  animate: { opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' },
+  exit: { opacity: 0, x: 20, scale: 0.98, filter: 'blur(3px)' },
+  transition: slideAndFadeTransition,
+};
 
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>('welcome');
   const [verificationEmail, setVerificationEmail] = useState<string>('');
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [userProfile, setUserProfile] = useState<{ fullName: string; username: string; phone?: string; createdAt?: string; photoURL?: string } | null>(null);
+  const [userProfile, setUserProfile] = useState<{ uid: string; fullName: string; username: string; phone?: string; createdAt?: string; photoURL?: string; email?: string; role?: string } | null>(null);
   const [isProfileCompleted, setIsProfileCompleted] = useState<boolean | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   
+  // Real-time System Settings (Maintenance Mode, Global Banners)
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(DEFAULT_SYSTEM_SETTINGS);
+
+  useEffect(() => {
+    const unsubscribe = systemSettingsService.subscribeSystemSettings((settings) => {
+      setSystemSettings(settings);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Custom toast notifications (success / error states)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -53,8 +92,16 @@ export default function App() {
   }, []);
 
   
-  // Certificate Public Verification Link Routing
+  // Certificate Public Verification Link Routing & Direct Admin URL routing
   const [verificationIdFromUrl, setVerificationIdFromUrl] = useState<string>('');
+  const [showGlobalAdmin, setShowGlobalAdmin] = useState<boolean>(false);
+  const [adminInitialTab, setAdminInitialTab] = useState<'approvals' | 'notifications' | 'coupons' | 'payments' | 'curriculum' | 'storage' | 'xp_store' | 'studyFeatures' | 'live_classes' | 'support' | 'settings' | 'reviews'>('approvals');
+
+  useEffect(() => {
+    const handleOpenAdmin = () => setShowGlobalAdmin(true);
+    window.addEventListener('nexus_open_admin_panel', handleOpenAdmin);
+    return () => window.removeEventListener('nexus_open_admin_panel', handleOpenAdmin);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -62,6 +109,28 @@ export default function App() {
     if (verifyParam) {
       setVerificationIdFromUrl(verifyParam);
     }
+    const adminParam = params.get('admin');
+    const pageParam = params.get('page');
+    const pathname = window.location.pathname;
+
+    if (adminParam === 'reviews' || pageParam === 'reviews' || pathname.endsWith('/reviews')) {
+      setAdminInitialTab('reviews');
+      setShowGlobalAdmin(true);
+    } else if (adminParam === 'true' || adminParam === '1') {
+      setShowGlobalAdmin(true);
+    }
+  }, []);
+
+  // Global Keyboard Shortcut: Ctrl+Shift+A or Cmd+Shift+A opens Admin Panel anytime
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        setShowGlobalAdmin(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Auto-clear toasts
@@ -81,22 +150,30 @@ export default function App() {
     });
   }, []);
 
+  // Listen for real-time profile edits (Display name, photoURL)
+  useEffect(() => {
+    const handleProfileUpdate = (e: any) => {
+      if (e?.detail) {
+        setUserProfile((prev) => prev ? { ...prev, ...e.detail } : e.detail);
+      }
+    };
+    window.addEventListener('nexus_profile_updated', handleProfileUpdate);
+    return () => window.removeEventListener('nexus_profile_updated', handleProfileUpdate);
+  }, []);
+
   // Firebase Authentication State Observer (Session Persistence & Auto Login)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      let freshUser = firebaseUser;
-      
-      if (firebaseUser) {
-        try {
-          await firebaseUser.reload();
-          if (auth.currentUser) {
-            freshUser = auth.currentUser;
-          }
-        } catch (e) {
-          console.warn('Failed to reload user in App', e);
-        }
+    let isMounted = true;
+
+    // Safety fallback: ensure loader dismisses within 2.5s even if Firebase is sluggish on mobile networks
+    const timer = setTimeout(() => {
+      if (isMounted) {
+        setIsAuthLoading(false);
       }
-      
+    }, 2500);
+
+    const unsubscribe = onAuthStateChanged(auth, async (freshUser) => {
+      if (!isMounted) return;
       setUser(freshUser);
       
       if (freshUser) {
@@ -106,53 +183,50 @@ export default function App() {
           const result = await authService.checkAndInitializeProfile(freshUser);
           const data = result.data;
           
-          setUserProfile({
-            fullName: data?.fullName || freshUser.displayName || 'Scholar',
-            username: data?.username || '',
-            phone: data?.phoneNumber || data?.phone || undefined,
-            createdAt: data?.createdAt ? (typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate().toISOString() : data.createdAt) : undefined,
-            photoURL: data?.photoURL || freshUser.photoURL || undefined,
-          });
+          if (isMounted) {
+            setUserProfile({
+              uid: freshUser.uid,
+              fullName: data?.fullName || freshUser.displayName || 'Scholar',
+              username: data?.username || '',
+              phone: data?.phoneNumber || data?.phone || undefined,
+              createdAt: data?.createdAt ? (typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate().toISOString() : data.createdAt) : undefined,
+              photoURL: data?.photoURL || freshUser.photoURL || undefined,
+              email: freshUser.email || data?.email || '',
+              role: data?.role || (freshUser.email === 'wahid23hasan@gmail.com' ? 'super_admin' : 'student'),
+            });
 
-          setIsProfileCompleted(result.profileCompleted);
-
-          // Auto-routing depending on verification status and profile completed status
-          if (freshUser.emailVerified || !ENABLE_EMAIL_VERIFICATION) {
-            if (result.profileCompleted) {
-              setCurrentView('welcome');
-            } else {
-              setCurrentView('profile-setup');
-            }
-          } else {
-            setCurrentView('verify');
+            setIsProfileCompleted(result.profileCompleted ?? true);
           }
         } catch (err) {
-          console.error('Error loading user profile details from Firestore:', err);
-          setUserProfile({
-            fullName: freshUser.displayName || 'Scholar',
-            username: '',
-          });
-          setIsProfileCompleted(false);
-          
-          if (freshUser.emailVerified || !ENABLE_EMAIL_VERIFICATION) {
-            setCurrentView('profile-setup');
-          } else {
-            setCurrentView('verify');
+          console.warn('Profile read notice in App (using authenticated fallback):', err);
+          if (isMounted) {
+            setUserProfile(prev => prev || {
+              uid: freshUser.uid,
+              fullName: freshUser.displayName || freshUser.email?.split('@')[0] || 'Scholar',
+              username: freshUser.email?.split('@')[0] || 'scholar',
+              email: freshUser.email || '',
+            });
+            // Do not kick the user out if authenticated
+            setIsProfileCompleted(true);
           }
         }
       } else {
-        setUserProfile(null);
-        setIsProfileCompleted(null);
-        // If not logged in, take them back to welcome/login
-        if (currentView === 'verify' || currentView === 'profile-setup') {
-          setCurrentView('welcome');
+        if (isMounted) {
+          setUserProfile(null);
+          setIsProfileCompleted(null);
         }
       }
-      setIsAuthLoading(false);
+      if (isMounted) {
+        setIsAuthLoading(false);
+      }
     });
 
-    return () => unsubscribe();
-  }, [currentView]);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      unsubscribe();
+    };
+  }, []);
 
   
   const triggerToast = useCallback((message: string, type: 'success' | 'error') => {
@@ -163,9 +237,37 @@ export default function App() {
     await authService.logout();
   };
 
+  const userRole = (userProfile?.role || '').toLowerCase().trim();
+  const userEmail = (user?.email || userProfile?.email || '').toLowerCase().trim();
+  const isRealAdmin = userRole === 'super_admin' || userRole === 'admin' || userEmail === 'wahid23hasan@gmail.com';
+  const isMaintenanceActiveForUser = Boolean(systemSettings.maintenanceMode) && !isRealAdmin;
+
   return (
-    <GlowBackground>
-      {/* Persistent Offline Mode Badge */}
+    <AuthProvider>
+      <ClickAnimationProvider>
+        <GlowBackground>
+        {/* Floating Admin Maintenance Mode Bypass Badge */}
+        <AnimatePresence>
+          {systemSettings.maintenanceMode && isRealAdmin && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="fixed top-2 right-4 z-50 pointer-events-auto"
+            >
+              <button
+                onClick={() => setShowGlobalAdmin(true)}
+                className="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-amber-950/90 hover:bg-amber-900 border border-amber-500/50 text-amber-300 backdrop-blur-md shadow-2xl text-[10px] font-mono font-bold tracking-wider cursor-pointer transition-all"
+                title="Click to open Admin Panel Settings"
+              >
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+                <span>MAINTENANCE ACTIVE (ADMIN BYPASS)</span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Persistent Offline Mode Badge */}
       <AnimatePresence>
         {isOffline && (
           <motion.div
@@ -217,27 +319,17 @@ export default function App() {
 
       {/* 3. Screen Views Coordinate Router with Micro Page transitions */}
       <div className="flex-1 flex flex-col h-full justify-between">
-        {isAuthLoading ? (
-          <div className="flex-1 flex flex-col items-center justify-center space-y-4">
-            <svg className="animate-spin h-8 w-8 text-[#39FF14]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p className="text-xs font-mono tracking-widest text-[#39FF14]/80 animate-pulse">
-              INITIALIZING ACADEMIC MATRIX...
-            </p>
-          </div>
+        {(isAuthLoading || (user !== null && isProfileCompleted === null)) ? (
+          <BrandLoader 
+            label="INITIALIZING ACADEMIC MATRIX" 
+            subLabel="AUTHENTICATING SECURE PROTOCOLS" 
+          />
         ) : (
           <Suspense fallback={
-            <div className="flex-1 flex flex-col items-center justify-center space-y-4">
-              <svg className="animate-spin h-8 w-8 text-[#39FF14]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <p className="text-xs font-mono tracking-widest text-[#39FF14]/80 animate-pulse">
-                LOADING MODULE...
-              </p>
-            </div>
+            <BrandLoader 
+              label="LOADING MODULE" 
+              subLabel="SYNCHRONIZING SCHOLAR ASSETS" 
+            />
           }>
           <AnimatePresence mode="wait">
             {verificationIdFromUrl ? (
@@ -256,29 +348,61 @@ export default function App() {
                   }}
                 />
               </motion.div>
-            ) : user && (user.emailVerified || !ENABLE_EMAIL_VERIFICATION) && isProfileCompleted === false ? (
+            ) : isMaintenanceActiveForUser ? (
+              <motion.div
+                key="system-maintenance-screen"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[9999] bg-[#030712]/95 backdrop-blur-xl flex flex-col justify-center items-center overflow-y-auto"
+              >
+                <MaintenanceScreen
+                  settings={systemSettings}
+                  userEmail={user?.email || undefined}
+                  onLogout={handleLogout}
+                  onRefresh={() => {
+                    systemSettingsService.getSystemSettings().then(setSystemSettings);
+                    triggerToast('সিস্টেম স্ট্যাটাস যাচাই করা হচ্ছে...', 'success');
+                  }}
+                />
+              </motion.div>
+            ) : user && !user.emailVerified && ENABLE_EMAIL_VERIFICATION && localStorage.getItem(`nexus_email_verified_${user.uid}`) !== 'true' && localStorage.getItem(`nexus_email_verified_${user.email || ''}`) !== 'true' ? (
+              <motion.div
+                key="unverified-email-notice"
+                {...slideFadeForward}
+                className="flex-1 flex flex-col"
+              >
+                <VerificationView
+                  email={user.email || verificationEmail}
+                  onNavigate={setCurrentView}
+                  onSetVerificationEmail={setVerificationEmail}
+                  onShowNotification={triggerToast}
+                />
+              </motion.div>
+            ) : user && isProfileCompleted === false ? (
               <motion.div
                 key="profile-setup"
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                transition={{ duration: 0.3 }}
+                {...slideFadeForward}
                 className="flex-1 flex flex-col"
               >
                 <ProfileSetupView
                   user={user}
+                  initialProfile={userProfile}
                   onComplete={() => {
                     setIsProfileCompleted(true);
-                    // Re-fetch profile details
+                    // Immediately fetch the updated user document to sync photoURL and username
                     getDoc(doc(db, 'users', user.uid)).then((docSnap) => {
                       if (docSnap.exists()) {
                         const data = docSnap.data();
                         setUserProfile({
+                          uid: user.uid,
                           fullName: data.fullName || user.displayName || 'Scholar',
                           username: data.username || 'scholar',
                           phone: data.phoneNumber || data.phone || undefined,
                           createdAt: data.createdAt ? (typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate().toISOString() : data.createdAt) : undefined,
-                          photoURL: data.photoURL || undefined,
+                          photoURL: data.photoURL || user.photoURL || undefined,
+                          email: user.email || data.email || '',
+                          role: data.role || (user.email === 'wahid23hasan@gmail.com' ? 'super_admin' : 'student'),
                         });
                       }
                     });
@@ -287,92 +411,98 @@ export default function App() {
                   onShowNotification={triggerToast}
                 />
               </motion.div>
-            ) : user && (user.emailVerified || !ENABLE_EMAIL_VERIFICATION) && isProfileCompleted === true ? (
+            ) : user && isProfileCompleted === true ? (
               <motion.div
                 key="authenticated"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
+                {...slideFadeForward}
                 className="flex-1 flex flex-col justify-between py-2"
               >
-                <CourseDiscoveryView
+                <StudentLayout
                   userProfile={userProfile}
+                  systemSettings={systemSettings}
                   onLogout={handleLogout}
+                  onOpenAdminPanel={() => setShowGlobalAdmin(true)}
+                  onRefresh={() => {
+                    systemSettingsService.getSystemSettings().then(setSystemSettings);
+                    triggerToast('সিস্টেম স্ট্যাটাস যাচাই করা হচ্ছে...', 'success');
+                  }}
+                >
+                  <CourseDiscoveryView
+                    userProfile={userProfile}
+                    onLogout={handleLogout}
+                    onShowNotification={triggerToast}
+                  />
+                </StudentLayout>
+              </motion.div>
+            ) : currentView === 'login' ? (
+              <motion.div
+                key="login"
+                {...slideFadeForward}
+                className="flex-1 flex flex-col"
+              >
+                <LoginView
+                  onNavigate={setCurrentView}
+                  onSetVerificationEmail={setVerificationEmail}
+                  onShowNotification={triggerToast}
+                />
+              </motion.div>
+            ) : currentView === 'register' ? (
+              <motion.div
+                key="register"
+                {...slideFadeForward}
+                className="flex-1 flex flex-col"
+              >
+                <RegisterView
+                  onNavigate={setCurrentView}
+                  onSetVerificationEmail={setVerificationEmail}
+                  onShowNotification={triggerToast}
+                />
+              </motion.div>
+            ) : currentView === 'verify' ? (
+              <motion.div
+                key="verify"
+                {...slideFadeForward}
+                className="flex-1 flex flex-col"
+              >
+                <VerificationView
+                  email={verificationEmail}
+                  onNavigate={setCurrentView}
+                  onSetVerificationEmail={setVerificationEmail}
                   onShowNotification={triggerToast}
                 />
               </motion.div>
             ) : (
-              <>
-                {currentView === 'welcome' && (
-                  <motion.div
-                    key="welcome"
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 10 }}
-                    transition={{ duration: 0.3 }}
-                    className="flex-1 flex flex-col"
-                  >
-                    <WelcomeView onNavigate={setCurrentView} />
-                  </motion.div>
-                )}
-
-                {currentView === 'login' && (
-                  <motion.div
-                    key="login"
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    transition={{ duration: 0.3 }}
-                    className="flex-1 flex flex-col"
-                  >
-                    <LoginView
-                      onNavigate={setCurrentView}
-                      onSetVerificationEmail={setVerificationEmail}
-                      onShowNotification={triggerToast}
-                    />
-                  </motion.div>
-                )}
-
-                {currentView === 'register' && (
-                  <motion.div
-                    key="register"
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    transition={{ duration: 0.3 }}
-                    className="flex-1 flex flex-col"
-                  >
-                    <RegisterView
-                      onNavigate={setCurrentView}
-                      onSetVerificationEmail={setVerificationEmail}
-                      onShowNotification={triggerToast}
-                    />
-                  </motion.div>
-                )}
-
-                {currentView === 'verify' && (
-                  <motion.div
-                    key="verify"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.3 }}
-                    className="flex-1 flex flex-col"
-                  >
-                    <VerificationView
-                      email={verificationEmail}
-                      onNavigate={setCurrentView}
-                      onSetVerificationEmail={setVerificationEmail}
-                      onShowNotification={triggerToast}
-                    />
-                  </motion.div>
-                )}
-              </>
+              <motion.div
+                key="welcome"
+                {...slideFadeBackward}
+                className="flex-1 flex flex-col"
+              >
+                <WelcomeView onNavigate={setCurrentView} />
+              </motion.div>
             )}
           </AnimatePresence>
           </Suspense>
         )}
       </div>
-    </GlowBackground>
+
+      {/* Global Admin Panel Modal (Opens directly via ?admin=true or shortcut anytime) */}
+      <AdminPanelModal
+        isOpen={showGlobalAdmin}
+        initialTab={adminInitialTab}
+        onClose={() => {
+          setShowGlobalAdmin(false);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('admin');
+          url.searchParams.delete('page');
+          window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+        }}
+        onShowNotification={triggerToast}
+      />
+
+      {/* Milestone Toast Notification System with Framer Motion */}
+      <MilestoneToastContainer />
+      </GlowBackground>
+    </ClickAnimationProvider>
+    </AuthProvider>
   );
 }

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { 
   Download, 
@@ -13,7 +14,11 @@ import {
   Clock,
   ExternalLink
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { Certificate } from '../types/certificate';
+import { HolographicCertSeal } from './HolographicCertSeal';
+import { certificateService } from '../services/certificateService';
 
 interface PremiumCertificatePreviewProps {
   certificate: Certificate;
@@ -28,6 +33,26 @@ export function PremiumCertificatePreview({
 }: PremiumCertificatePreviewProps) {
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [settings, setSettings] = useState({
+    instituteName: 'Nexus Academy of Advanced Technology',
+    signatureName: 'Dr. John Doe',
+    signatureTitle: 'Director of Education'
+  });
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    certificateService.getCertificateSettings().then(data => {
+      if (mounted && data) {
+        setSettings({
+          instituteName: data.instituteName || 'Nexus Academy of Advanced Technology',
+          signatureName: data.signatureName || 'Dr. John Doe',
+          signatureTitle: data.signatureTitle || 'Director of Education'
+        });
+      }
+    });
+    return () => { mounted = false; };
+  }, []);
 
   const verificationUrl = `${window.location.origin}?verify=${certificate.verificationId}`;
 
@@ -110,7 +135,7 @@ export function PremiumCertificatePreview({
         <body onload="window.print(); window.close();">
           <div class="cert-container text-center flex flex-col justify-between shadow-2xl">
             <!-- Top corner design details -->
-            <div class="absolute top-4 left-4 text-[9px] font-mono tracking-widest text-[#39FF14]">NEXUS ACADEMY OF ADVANCED TECHNOLOGY</div>
+            <div class="absolute top-4 left-4 text-[9px] font-mono tracking-widest text-[#39FF14] uppercase">${settings.instituteName}</div>
             <div class="absolute top-4 right-4 text-[9px] font-mono tracking-widest text-slate-400">SECURE BLOCKCHAIN VERIFICATION</div>
 
             <!-- Header Section -->
@@ -134,8 +159,8 @@ export function PremiumCertificatePreview({
             <div class="flex items-end justify-between px-12 pb-4">
               <!-- Left Signature -->
               <div class="text-left w-48 border-t border-slate-700 pt-3">
-                <div class="font-serif italic text-white text-md mb-0.5">Alex Carter</div>
-                <div class="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Tutor / Curriculum Lead</div>
+                <div class="font-serif italic text-white text-md mb-0.5">${settings.signatureName}</div>
+                <div class="text-[9px] font-mono text-slate-400 uppercase tracking-wider">${settings.signatureTitle}</div>
               </div>
 
               <!-- Center Emblem -->
@@ -164,12 +189,56 @@ export function PremiumCertificatePreview({
     printWindow.document.close();
   };
 
-  const handleMockPdfDownload = () => {
-    // High-quality print dialog trigger
+  const handlePdfDownload = async () => {
+    setIsGeneratingPdf(true);
     onShowNotification('Compiling print-ready high fidelity PDF matrix...', 'success');
-    setTimeout(() => {
-      handlePrint();
-    }, 1000);
+    
+    try {
+      const element = document.getElementById('printable-certificate-frame');
+      if (!element) throw new Error('Certificate element not found');
+
+      // Add a specific class to override any scaling effects for the canvas capture
+      element.classList.add('pdf-rendering');
+      
+      const canvas = await html2canvas(element, {
+        scale: 2, // Higher scale for better resolution
+        useCORS: true, // Needed if external images like QR are loaded
+        backgroundColor: '#030712' // Matching the theme background
+      });
+      
+      element.classList.remove('pdf-rendering');
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4' // 297mm x 210mm
+      });
+
+      // A4 dimensions
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      // Calculate aspect ratio to fit the canvas in A4
+      const imgProps = pdf.getImageProperties(imgData);
+      const ratio = Math.min(pdfWidth / imgProps.width, pdfHeight / imgProps.height);
+      const imgWidth = imgProps.width * ratio;
+      const imgHeight = imgProps.height * ratio;
+      
+      // Center it
+      const x = (pdfWidth - imgWidth) / 2;
+      const y = (pdfHeight - imgHeight) / 2;
+
+      pdf.addImage(imgData, 'PNG', x, y, imgWidth, imgHeight);
+      pdf.save(`Certificate_${certificate.courseName.replace(/\s+/g, '_')}.pdf`);
+      
+      onShowNotification('PDF successfully generated!', 'success');
+    } catch (err) {
+      console.error(err);
+      onShowNotification('Failed to generate PDF. Please try printing instead.', 'error');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const handleShare = () => {
@@ -192,15 +261,22 @@ export function PremiumCertificatePreview({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-y-auto w-screen h-[100dvh] top-0 left-0">
       
       {/* Modal Card */}
       <motion.div 
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col md:flex-row"
+        className="bg-slate-900 border border-white/10 rounded-2xl sm:rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col md:flex-row max-h-[88dvh] overflow-y-auto my-auto z-10"
       >
         
         {/* Certificate Display Side */}
@@ -221,8 +297,8 @@ export function PremiumCertificatePreview({
           >
             {/* Header branding */}
             <div className="flex justify-between items-start">
-              <div className="text-[7px] md:text-[8px] font-mono tracking-wider text-slate-500 text-left">
-                NEXUS ACADEMY OF ADVANCED TECHNOLOGY
+              <div className="text-[7px] md:text-[8px] font-mono tracking-wider text-slate-500 text-left uppercase">
+                {settings.instituteName}
               </div>
               <div className="text-[7px] md:text-[8px] font-mono tracking-wider text-slate-500 text-right">
                 SECURE GRADUATION REGISTER
@@ -262,8 +338,8 @@ export function PremiumCertificatePreview({
             {/* Footnote details */}
             <div className="flex justify-between items-end pt-2 border-t border-white/5">
               <div className="text-left">
-                <div className="font-serif italic text-white text-[10px]">{certificate.instructorName}</div>
-                <div className="text-[6px] md:text-[7px] font-mono text-slate-500 uppercase">COURSE INSTRUCTOR</div>
+                <div className="font-serif italic text-white text-[10px]">{settings.signatureName}</div>
+                <div className="text-[6px] md:text-[7px] font-mono text-slate-500 uppercase">{settings.signatureTitle}</div>
               </div>
 
               <div className="flex flex-col items-center shrink-0">
@@ -311,8 +387,20 @@ export function PremiumCertificatePreview({
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 leading-relaxed">
-                This credential represents full syllabus mastery. Anyone can scan the QR code or use the unique verification link to instantly audit the authenticity of this certificate directly on the blockchain ledger.
+                This credential represents full syllabus mastery. Anyone can scan the QR code or use the unique verification link to instantly audit the authenticity of this certificate.
               </p>
+            </div>
+
+            {/* 3D Holographic Seal Badge */}
+            <div className="flex flex-col items-center justify-center p-3 bg-white/[0.02] border border-amber-500/20 rounded-2xl">
+              <HolographicCertSeal
+                serialNumber={`NEXUS-${certificate.verificationId}`}
+                studentName={certificate.studentName}
+                issueDate={certificate.issueDate}
+              />
+              <span className="text-[9px] font-mono text-amber-400 font-bold uppercase mt-2">
+                Tilt Mouse For 3D Hologram
+              </span>
             </div>
 
             {/* Action buttons */}
@@ -326,11 +414,12 @@ export function PremiumCertificatePreview({
               </button>
 
               <button
-                onClick={handleMockPdfDownload}
-                className="w-full flex items-center justify-center space-x-2 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold uppercase rounded-2xl transition-all cursor-pointer"
+                onClick={handlePdfDownload}
+                disabled={isGeneratingPdf}
+                className="w-full flex items-center justify-center space-x-2 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold uppercase rounded-2xl transition-all cursor-pointer disabled:opacity-50"
               >
                 <Download size={13} />
-                <span>Download PDF File</span>
+                <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download PDF File'}</span>
               </button>
 
               <button
@@ -359,6 +448,7 @@ export function PremiumCertificatePreview({
           </div>
         </div>
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }

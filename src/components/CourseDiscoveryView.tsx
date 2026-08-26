@@ -32,12 +32,22 @@ import {
   Code2,
   Radio,
   Layers,
-  FileCode
+  FileCode,
+  Play,
+  PlayCircle,
+  Calendar,
+  Hourglass,
+  Timer,
+  Zap,
+  Headset,
+  LifeBuoy,
+  HelpCircle
 } from 'lucide-react';
 import { Course, Banner } from '../types/course';
 import { courseService } from '../services/courseService';
-import { progressService } from '../services/progressService';
-import { auth } from '../services/firebase';
+import { progressService, CourseProgressInfo, LessonProgressInfo } from '../services/progressService';
+import { auth, db } from '../services/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 import { CourseDetailsView } from './CourseDetailsView';
 import { EnrollmentConfirmationView } from './EnrollmentConfirmationView';
@@ -45,6 +55,7 @@ import { PaymentView } from './PaymentView';
 import { MyCoursesView } from './MyCoursesView';
 import { LearningDashboardView } from './LearningDashboardView';
 import { AnnouncementBanner } from './AnnouncementBanner';
+import { EliteLoading } from './EliteLoading';
 
 import { MyCertificatesView } from './MyCertificatesView';
 import { NotificationCenter } from './NotificationCenter';
@@ -56,22 +67,32 @@ import { CourseReviewsModal } from './CourseReviewsModal';
 import { AiChatView } from './AiChatView';
 import { ProfileView } from './ProfileView';
 import { GamificationSummary } from './GamificationDashboard';
+import { AchievementTracker } from './AchievementTracker';
 import { RewardsView } from './RewardsView';
 import { AccountDetailsView } from './AccountDetailsView';
 import { PrivacySecurityView } from './PrivacySecurityView';
 import { HelpSupportView } from './HelpSupportView';
-import { AdminPanelModal } from './AdminPanelModal';
 import { CodeSandboxView } from './CodeSandboxView';
 import { PaymentHistoryView } from './PaymentHistoryView';
 
-import { notificationService } from '../services/notificationService';
+import { notificationService, getSafeTimestamp } from '../services/notificationService';
+import { triggerMilestoneToast } from '../services/milestoneService';
+import { DailyMysteryChestModal } from './DailyMysteryChestModal';
+import { SmartFocusTimerModal } from './SmartFocusTimerModal';
+import { XpStoreModal } from './XpStoreModal';
+import { WeeklyLeagueModal } from './WeeklyLeagueModal';
+import { SpeedMatchGameModal } from './SpeedMatchGameModal';
+import { GlobalLeaderboard } from './GlobalLeaderboard';
+import { LeaderboardRewardsView } from './LeaderboardRewardsView';
+import { soundFxService } from '../services/soundFxService';
+import { Volume2, VolumeX, Gift, ShoppingBag, Gamepad2, Menu } from 'lucide-react';
 import { Notification as DBNotification, Announcement } from '../types/notification';
 import { AiAssistantFAB } from './AiAssistantFAB';
 import { gamificationService } from '../services/gamificationService';
 
 const TabFallback = () => (
-  <div className="flex-1 flex flex-col items-center justify-center p-12">
-    <div className="w-6 h-6 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin mb-2" />
+  <div className="flex-1 flex flex-col items-center justify-center p-8">
+    <EliteLoading variant="inline" compact label="STREAMING ACADEMIC MODULE" subLabel="PREPARING INTERACTIVE CANVAS" />
   </div>
 );
 
@@ -144,6 +165,10 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
   const [currentSlide, setCurrentSlide] = useState<number>(0);
   const slideTimer = useRef<NodeJS.Timeout | null>(null);
 
+  // Auto-hiding Bottom Bar & AI FAB on scroll
+  const [isBarsVisible, setIsBarsVisible] = useState<boolean>(true);
+  const lastScrollYRef = useRef<number>(0);
+
   // Filter & Sort States
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState<boolean>(false);
@@ -160,8 +185,11 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
   const [selectedDetailsCourse, setSelectedDetailsCourse] = useState<Course | null>(null);
   
   // Tab Navigation & Active Learning states
-  const [activeTab, setActiveTab] = useState<'discover' | 'my-courses' | 'certificates' | 'live-classes' | 'community' | 'flashcards' | 'study-group' | 'sandbox' | 'profile' | 'payment-history' | 'account-details' | 'privacy-security' | 'help-support'>('discover');
+  const [activeTab, setActiveTab] = useState<'discover' | 'my-courses' | 'certificates' | 'live-classes' | 'community' | 'flashcards' | 'study-group' | 'sandbox' | 'profile' | 'payment-history' | 'account-details' | 'privacy-security' | 'help-support' | 'leaderboard'>('discover');
   const [activeLearningCourse, setActiveLearningCourse] = useState<Course | null>(null);
+  const [userCourseProgressMap, setUserCourseProgressMap] = useState<Record<string, CourseProgressInfo>>({});
+  const [userLessonProgressMap, setUserLessonProgressMap] = useState<Record<string, LessonProgressInfo[]>>({});
+  const [selectedResumeLesson, setSelectedResumeLesson] = useState<{ lessonId?: string; initialTime?: number } | null>(null);
   
   // Payment Module states
   const [paymentCourse, setPaymentCourse] = useState<Course | null>(null);
@@ -179,15 +207,32 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
 
   // Pagination/Infinite Scroll State
   const [visibleCount, setVisibleCount] = useState<number>(4);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+
+  const handleLoadMorePrograms = () => {
+    setIsLoadingMore(true);
+    soundFxService.playClick();
+    setTimeout(() => {
+      setVisibleCount((prev) => prev + 4);
+      setIsLoadingMore(false);
+    }, 800);
+  };
 
   // AI Assistant State
   const [isAiChatOpen, setIsAiChatOpen] = useState<boolean>(false);
   
   // Rewards View State
   const [isRewardsOpen, setIsRewardsOpen] = useState<boolean>(false);
-
-  // Admin Control Panel Modal State
-  const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
+  const [isChestOpen, setIsChestOpen] = useState<boolean>(false);
+  const [isFocusTimerOpen, setIsFocusTimerOpen] = useState<boolean>(false);
+  const [isStoreOpen, setIsStoreOpen] = useState<boolean>(false);
+  const [isLeagueOpen, setIsLeagueOpen] = useState<boolean>(false);
+  const [isGameOpen, setIsGameOpen] = useState<boolean>(false);
+  const [isQuickMenuOpen, setIsQuickMenuOpen] = useState<boolean>(false);
+  const [userXPVal, setUserXPVal] = useState<number>(0);
+  const [dailyStreakVal, setDailyStreakVal] = useState<number>(1);
+  const [unreadSupportCount, setUnreadSupportCount] = useState<number>(0);
+  const [isSoundMuted, setIsSoundMuted] = useState<boolean>(() => soundFxService.getIsMuted());
 
   // Search input element reference
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -217,6 +262,50 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
 
     // Run primary Firestore seed & load routines
     initializeData();
+
+    // Fetch user XP balance & Daily Streak and record daily login
+    const currentUid = auth.currentUser?.uid || userProfile?.username || 'scholar';
+    const refreshXP = () => {
+      gamificationService.recordDailyLogin(currentUid).then((loginRes) => {
+        if (loginRes.streak > 0) setDailyStreakVal(loginRes.streak);
+      }).catch(() => {});
+      gamificationService.getUserXP(currentUid).then((xpData) => {
+        setUserXPVal(xpData.totalXP);
+      }).catch(() => {});
+    };
+    refreshXP();
+
+    window.addEventListener('nexus_xp_updated', refreshXP);
+
+    // Scroll Direction Tracking for dynamic Bottom Bar & AI FAB Auto-Hiding
+    const handleScroll = (e: Event) => {
+      const target = e.target;
+      let currentScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+
+      if (target && target instanceof HTMLElement && typeof target.scrollTop === 'number') {
+        currentScrollY = target.scrollTop;
+      }
+
+      const diff = currentScrollY - lastScrollYRef.current;
+      const threshold = 8;
+
+      // Scrolling Down: Hide Bottom Bar and AI FAB
+      if (diff > threshold && currentScrollY > 40) {
+        setIsBarsVisible(false);
+      } 
+      // Scrolling Up or near top: Reveal Bottom Bar and AI FAB
+      else if (diff < -threshold || currentScrollY <= 25) {
+        setIsBarsVisible(true);
+      }
+
+      lastScrollYRef.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll, { capture: true });
+      window.removeEventListener('nexus_xp_updated', refreshXP);
+    };
   }, []);
 
   // Sync enrolled courses from Firestore when auth state or userProfile changes
@@ -229,6 +318,9 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       try {
         // Update Gamification Activity
         gamificationService.updateActivity(uId).then(res => {
+          if (typeof res.newStreak === 'number') {
+            setDailyStreakVal(res.newStreak || 1);
+          }
           if (res.streakIncreased) {
             onShowNotification(`Streak increased to ${res.newStreak} days! 🔥`, 'success');
           }
@@ -253,6 +345,25 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         setPendingPurchaseCourseIds(pendingPurchaseIds);
         setEnrolledIds(combinedApproved);
         localStorage.setItem('nexus_enrollments', JSON.stringify(combinedApproved));
+
+        // Fetch user progress for enrolled courses
+        const [allCourseProgs, allLessonProgs] = await Promise.all([
+          Promise.all(combinedApproved.map(cId => progressService.getCourseProgress(uId, cId))),
+          progressService.getAllUserLessonProgresses(uId)
+        ]);
+
+        const cMap: Record<string, CourseProgressInfo> = {};
+        allCourseProgs.forEach(p => {
+          if (p) cMap[p.courseId] = p;
+        });
+        setUserCourseProgressMap(cMap);
+
+        const lMap: Record<string, LessonProgressInfo[]> = {};
+        allLessonProgs.forEach(lp => {
+          if (!lMap[lp.courseId]) lMap[lp.courseId] = [];
+          lMap[lp.courseId].push(lp);
+        });
+        setUserLessonProgressMap(lMap);
       } catch (err) {
         console.warn('Silent enrollment sync failed:', err);
       }
@@ -262,6 +373,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
 
     const handlePurchaseUpdate = () => {
       syncEnrollments();
+      loadCourses();
     };
 
     window.addEventListener('nexus_purchases_updated', handlePurchaseUpdate);
@@ -276,8 +388,8 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
     let unsubscribeAnn: (() => void) | undefined;
 
     const setupListeners = () => {
-      const uId = auth.currentUser?.uid || userProfile?.username || 'guest_user';
-      const uEmail = auth.currentUser?.email || userProfile?.username || undefined;
+      const uId = auth.currentUser?.uid || (userProfile as any)?.uid || userProfile?.username || 'guest_user';
+      const uEmail = auth.currentUser?.email || (userProfile as any)?.email || userProfile?.username || undefined;
       const uName = userProfile?.fullName || auth.currentUser?.displayName || undefined;
 
       // Reset seen notifications cache if the user ID switches
@@ -294,19 +406,36 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       unsubscribeNotif = notificationService.listenToNotifications(uId, (list) => {
         setDbNotifications(list);
 
-        // Live Toast popups when a new broadcast or direct notification arrives while student is active
+        // Sort entire notification list strictly by createdAt descending (Newest first)
+        const sortedList = [...list].sort((a, b) => {
+          const tA = getSafeTimestamp(a.createdAt, a.notificationId);
+          const tB = getSafeTimestamp(b.createdAt, b.notificationId);
+          if (tB !== tA) return tB - tA;
+          return (b.notificationId || '').localeCompare(a.notificationId || '');
+        });
+
+        // Find unread notifications
+        const unreadNotifs = sortedList.filter(n => n.unread);
+
         if (seenNotifIdsRef.current === null) {
-          // Initialize seenNotifIdsRef with all pre-existing notifications on initial load to avoid toast storm on page refresh
-          seenNotifIdsRef.current = new Set(list.map(n => n.notificationId));
+          // INITIAL LOAD UPON ENTERING THE APP:
+          seenNotifIdsRef.current = new Set();
+
+          if (unreadNotifs.length > 0) {
+            // Show top popup alert for the NEWEST unread admin message immediately on app entry
+            const newestUnread = unreadNotifs[0];
+            onShowNotification(`🔔 ${newestUnread.title}: ${newestUnread.message}`, 'success');
+            seenNotifIdsRef.current.add(newestUnread.notificationId);
+          }
+
+          // Mark all existing notification IDs as processed
+          sortedList.forEach(n => seenNotifIdsRef.current!.add(n.notificationId));
         } else {
-          // Find any notification that is not in the seen set and is unread, and was created after the session/user-login started
-          const newItems = list.filter(n => {
+          // LIVE IN-APP UPDATE:
+          const newItems = sortedList.filter(n => {
             const isUnseen = !seenNotifIdsRef.current!.has(n.notificationId);
             const isUnread = n.unread;
-            const createdTime = new Date(n.createdAt).getTime();
-            // Allow a small 5 second clock skew buffer
-            const isPostStart = createdTime > (sessionStartTimeRef.current - 5000);
-            return isUnseen && isUnread && isPostStart;
+            return isUnseen && isUnread;
           });
 
           newItems.forEach(n => {
@@ -314,8 +443,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
             seenNotifIdsRef.current!.add(n.notificationId);
           });
           
-          // Ensure all IDs from the list are in the seen set
-          list.forEach(n => seenNotifIdsRef.current!.add(n.notificationId));
+          sortedList.forEach(n => seenNotifIdsRef.current!.add(n.notificationId));
         }
       }, uEmail, uName);
 
@@ -337,6 +465,38 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       authUnsub();
     };
   }, [userProfile, onShowNotification]);
+
+  // Real-time listener for support tickets unread admin replies
+  useEffect(() => {
+    const currentUid = auth.currentUser?.uid || userProfile?.username;
+    if (!currentUid) {
+      setUnreadSupportCount(0);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'support_tickets'),
+      where('userId', '==', currentUid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      let unreadCount = 0;
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.status === 'open' && Array.isArray(data.replies) && data.replies.length > 0) {
+          const hasAdminReply = data.replies.some((r: any) => Boolean(r.adminId));
+          if (hasAdminReply) {
+            unreadCount += 1;
+          }
+        }
+      });
+      setUnreadSupportCount(unreadCount);
+    }, (err) => {
+      console.warn('Error listening to support tickets unread count:', err);
+    });
+
+    return () => unsubscribe();
+  }, [userProfile]);
 
   // Fetch from Firestore database
   const initializeData = async (isRefreshed = false) => {
@@ -362,6 +522,86 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
     }
   };
 
+  // Custom video asset preloader strategy to minimize start-time latency
+  const preloadedUrlsRef = useRef<Set<string>>(new Set());
+
+  const preloadVideoAssets = (urls: (string | undefined)[]) => {
+    if (typeof window === 'undefined') return;
+    const validUrls = urls.filter((url): url is string => {
+      if (!url || typeof url !== 'string') return false;
+      const clean = url.trim();
+      if (!clean || clean.startsWith('firestore:') || clean.startsWith('vid_')) return false;
+      return !preloadedUrlsRef.current.has(clean);
+    });
+
+    validUrls.forEach((url) => {
+      preloadedUrlsRef.current.add(url);
+      try {
+        // Method A: HTML5 video element with preload="metadata"
+        const v = document.createElement('video');
+        v.preload = 'metadata';
+        v.muted = true;
+        v.playsInline = true;
+        v.src = url;
+        v.load();
+
+        // Method B: Lightweight socket & HTTP cache warmup
+        fetch(url, {
+          method: 'GET',
+          headers: { Range: 'bytes=0-102400' },
+          mode: 'cors',
+          cache: 'force-cache'
+        }).catch(() => {});
+      } catch (e) {}
+    });
+  };
+
+  // Automatically preload video assets for visible & enrolled courses
+  useEffect(() => {
+    if (courses.length === 0) return;
+
+    const timer = setTimeout(() => {
+      const urlsToPreload: (string | undefined)[] = [];
+
+      courses.slice(0, 8).forEach((c) => {
+        if (c.videoUrl) urlsToPreload.push(c.videoUrl);
+        if (c.previewVideoUrl) urlsToPreload.push(c.previewVideoUrl);
+        if (c.demoVideoUrl) urlsToPreload.push(c.demoVideoUrl);
+        if (c.sections) {
+          c.sections.forEach((s) => {
+            if (s.lessons) {
+              s.lessons.slice(0, 2).forEach((l) => {
+                if (l.videoUrl) urlsToPreload.push(l.videoUrl);
+              });
+            }
+          });
+        }
+        if (c.curriculum) {
+          c.curriculum.forEach((ch) => {
+            if (ch.lessons) {
+              ch.lessons.slice(0, 2).forEach((l) => {
+                if (l.videoUrl) urlsToPreload.push(l.videoUrl);
+              });
+            }
+          });
+        }
+        if (c.modules) {
+          c.modules.forEach((m: any) => {
+            if (m.lessons) {
+              m.lessons.slice(0, 2).forEach((l: any) => {
+                if (l.videoUrl) urlsToPreload.push(l.videoUrl);
+              });
+            }
+          });
+        }
+      });
+
+      preloadVideoAssets(urlsToPreload);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [courses]);
+
   // Load courses based on active filters and sorting
   const loadCourses = async () => {
     const filters = {
@@ -377,14 +617,35 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
     setVisibleCount(4); // Reset visible count on filter/sort change
   };
 
-  // Listen to filter, sorting, and real-time search query changes with debounce
+  // Listen to filter, sorting, and real-time Firestore database changes with unsubscribe cleanup
   useEffect(() => {
-    if (!loading) {
-      const timer = setTimeout(() => {
+    const filters = {
+      category: selectedCategory,
+      priceType: priceFilter,
+      isBestSeller: badgeFilter === 'bestseller',
+      isNew: badgeFilter === 'new',
+      rating: badgeFilter === 'highest_rated' ? 4.8 : undefined,
+      searchQuery: searchQuery
+    };
+
+    const unsubscribe = courseService.subscribeCourses(
+      filters,
+      sortBy,
+      (liveCourses) => {
+        setCourses(liveCourses);
+        setLoading(false);
+      },
+      (err) => {
+        console.warn('Real-time courses sync failed, falling back to static fetch:', err);
         loadCourses();
-      }, 150);
-      return () => clearTimeout(timer);
-    }
+      }
+    );
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, [selectedCategory, priceFilter, badgeFilter, sortBy, searchQuery]);
 
   // Infinite sliding auto loop
@@ -492,6 +753,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
     const updated = [...enrolledIds, selectedEnrollCourse.courseId];
     setEnrolledIds(updated);
     localStorage.setItem('nexus_enrollments', JSON.stringify(updated));
+    courseService.incrementCourseStudents(selectedEnrollCourse.courseId);
     onShowNotification(`Successfully enrolled in ${selectedEnrollCourse.title}! Welcome aboard.`, 'success');
     setSelectedEnrollCourse(null);
   };
@@ -579,6 +841,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           const updated = [...enrolledIds, paymentCourse.courseId];
           setEnrolledIds(updated);
           localStorage.setItem('nexus_enrollments', JSON.stringify(updated));
+          courseService.incrementCourseStudents(paymentCourse.courseId);
           setPaymentCourse(null);
           setSelectedEnrollCourse(null);
           setSelectedDetailsCourse(null);
@@ -598,6 +861,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           const updated = [...enrolledIds, selectedEnrollCourse.courseId];
           setEnrolledIds(updated);
           localStorage.setItem('nexus_enrollments', JSON.stringify(updated));
+          courseService.incrementCourseStudents(selectedEnrollCourse.courseId);
           setSelectedEnrollCourse(null);
           setSelectedDetailsCourse(null);
           onShowNotification(`Successfully enrolled in ${selectedEnrollCourse.title}! Welcome aboard.`, 'success');
@@ -637,13 +901,18 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       <LearningDashboardView
         course={activeLearningCourse}
         userProfile={userProfile}
-        onBack={() => setActiveLearningCourse(null)}
+        onBack={() => {
+          setActiveLearningCourse(null);
+          setSelectedResumeLesson(null);
+        }}
         onShowNotification={onShowNotification}
         purchasedCourseIds={enrolledIds}
         onTriggerPurchase={(c) => {
           setActiveLearningCourse(null);
           handleEnrollClick(c);
         }}
+        initialLessonId={selectedResumeLesson?.lessonId}
+        initialTime={selectedResumeLesson?.initialTime}
       />
     );
   }
@@ -652,53 +921,59 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
     <div className="flex-1 flex flex-col justify-between py-1 px-1 text-slate-100 max-w-lg mx-auto w-full relative pb-28">
       
       {/* ================= HEADER ================= */}
-      <header className="flex items-center justify-between py-3 px-1 border-b border-white/5 relative z-10 bg-[#0a0f1d]">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-[#39FF14]/30 overflow-hidden flex items-center justify-center shadow-[0_0_12px_rgba(57,255,20,0.15)]">
-            {userProfile?.photoURL ? (
+      <header className="flex items-center justify-between gap-2 py-2.5 px-1.5 border-b border-white/5 relative z-10 bg-[#0a0f1d]">
+        {/* Left: User Avatar & Greetings */}
+        <div className="flex items-center space-x-2.5 min-w-0 shrink">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-[#39FF14]/30 overflow-hidden flex items-center justify-center shadow-[0_0_12px_rgba(57,255,20,0.15)] shrink-0">
+            {userProfile?.photoURL?.trim() ? (
               <img 
-                src={userProfile.photoURL || undefined} 
+                src={userProfile.photoURL.trim()} 
                 alt="Profile Avatar" 
                 className="w-full h-full object-cover" 
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <GraduationCap size={20} className="text-[#39FF14] drop-shadow-[0_0_4px_rgba(57,255,20,0.4)]" />
+              <GraduationCap size={18} className="text-[#39FF14] drop-shadow-[0_0_4px_rgba(57,255,20,0.4)]" />
             )}
           </div>
-          <div>
-            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">{getGreeting()}</p>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-sm font-sans font-semibold text-white tracking-tight flex items-center space-x-1">
-                <span>{userProfile?.fullName || 'Distinguished Scholar'}</span>
-                <span className="text-xs">👋</span>
+          <div className="min-w-0">
+            <p className="text-[9px] font-mono text-slate-400 uppercase tracking-widest leading-none mb-0.5">{getGreeting()}</p>
+            <div className="flex items-center space-x-1.5 min-w-0">
+              <h1 className="text-xs sm:text-sm font-sans font-semibold text-white tracking-tight flex items-center space-x-1 truncate">
+                <span className="truncate max-w-[100px] xs:max-w-[140px] sm:max-w-none">{userProfile?.fullName || 'Distinguished Scholar'}</span>
+                <span className="text-xs shrink-0">👋</span>
               </h1>
-              <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border flex items-center space-x-1 transition-all ${
+              <span className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded-full border flex items-center space-x-0.5 shrink-0 transition-all ${
                 pendingPurchaseCourseIds.length > 0 && enrolledIds.length === 0
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.2)] animate-pulse'
                   : 'bg-[#39FF14]/15 text-[#39FF14] border-[#39FF14]/30 shadow-[0_0_8px_rgba(57,255,20,0.15)]'
               }`}>
-                {pendingPurchaseCourseIds.length > 0 && enrolledIds.length === 0 ? <Clock size={10} /> : <ShieldCheck size={10} />}
+                {pendingPurchaseCourseIds.length > 0 && enrolledIds.length === 0 ? <Clock size={9} /> : <ShieldCheck size={9} />}
                 <span>{pendingPurchaseCourseIds.length > 0 && enrolledIds.length === 0 ? 'Pending' : 'Approved'}</span>
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
-          {/* Rewards Button */}
-          <button 
-            onClick={() => setIsRewardsOpen(true)}
-            className="p-2 rounded-xl border bg-orange-500/10 border-orange-500/30 text-orange-400 hover:bg-orange-500/20 transition-all duration-300 relative cursor-pointer"
-            title="Rewards & Gamification"
+        {/* Right: Streak Counter, Notification and 3-Line Quest/Rewards Menu Button */}
+        <div className="flex items-center space-x-1.5 shrink-0 pl-1 relative">
+          {/* Daily Streak Counter Header Pill */}
+          <button
+            onClick={() => {
+              soundFxService.playClick();
+              setIsRewardsOpen(true);
+            }}
+            className="flex items-center space-x-1 px-2 py-1.5 rounded-xl bg-gradient-to-r from-orange-500/15 to-amber-500/15 border border-orange-500/35 text-orange-400 font-mono text-[11px] font-bold shrink-0 shadow-[0_0_12px_rgba(249,115,22,0.18)] cursor-pointer hover:border-orange-500/60 hover:bg-orange-500/25 transition-all select-none"
+            title={`${dailyStreakVal} Day Login Streak - Click to open rewards`}
           >
-            <Trophy size={16} />
+            <Flame size={13} className="text-orange-500 fill-orange-500 animate-pulse" />
+            <span className="text-[10px] sm:text-[11px] font-black">{dailyStreakVal}d</span>
           </button>
 
           {/* Notification Button */}
           <button 
             onClick={() => setShowNotifications(true)}
-            className={`p-2 rounded-xl border transition-all duration-300 relative cursor-pointer ${
+            className={`p-2 rounded-xl border transition-all duration-300 relative cursor-pointer shrink-0 ${
               showNotifications 
                 ? 'bg-[#39FF14]/10 border-[#39FF14]/40 text-[#39FF14]' 
                 : 'bg-white/[0.02] border-white/10 text-slate-300 hover:bg-white/[0.05]'
@@ -707,20 +982,295 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           >
             <Bell size={16} />
             {unreadCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 rounded-full flex items-center justify-center text-[9px] font-mono font-bold text-white shadow-lg shadow-red-500/50 animate-pulse border border-slate-900">
+              <span className="absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 bg-red-500 rounded-full flex items-center justify-center text-[8px] font-mono font-bold text-white shadow-lg shadow-red-500/50 animate-pulse border border-slate-900">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </button>
 
-          {/* Quick Logout shortcut */}
-          <button 
-            onClick={onLogout}
-            className="p-2 bg-red-950/10 border border-red-500/10 text-red-400 hover:text-red-300 rounded-xl hover:bg-red-950/20 transition-all cursor-pointer text-xs font-mono font-bold uppercase tracking-wider flex items-center space-x-1"
-            title="Log Out Session"
-          >
-            <span>OUT</span>
-          </button>
+          {/* 3-Line Menu with Rewards/XP/Timer Indicator Icon */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                soundFxService.playClick();
+                setIsQuickMenuOpen(!isQuickMenuOpen);
+              }}
+              className={`p-2 rounded-xl border transition-all duration-300 flex items-center space-x-1.5 cursor-pointer relative ${
+                isQuickMenuOpen
+                  ? 'bg-[#39FF14]/20 border-[#39FF14] text-[#39FF14] shadow-[0_0_15px_rgba(57,255,20,0.3)]'
+                  : 'bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-[#39FF14]/10 border-[#39FF14]/40 text-slate-200 hover:text-white hover:border-[#39FF14]'
+              }`}
+              title="Rewards, League, Game Arena & Focus Chamber"
+            >
+              {/* 3-line hamburger icon */}
+              <Menu size={16} className="text-[#39FF14]" />
+              
+              {/* Rewards/XP indicator icon badge */}
+              <div className="flex items-center space-x-0.5 bg-[#39FF14]/20 px-1.5 py-0.5 rounded-lg border border-[#39FF14]/30">
+                <Sparkles size={11} className="text-amber-400 animate-pulse" />
+                <span className="text-[10px] font-mono font-black text-[#39FF14]">XP</span>
+              </div>
+            </button>
+
+            {/* Dropdown Menu when clicked */}
+            <AnimatePresence>
+              {isQuickMenuOpen && (
+                <>
+                  {/* Backdrop overlay to close when clicking outside */}
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsQuickMenuOpen(false)}
+                  />
+
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-12 w-64 rounded-2xl bg-[#0d1527] border border-[#39FF14]/30 shadow-[0_12px_36px_rgba(0,0,0,0.85)] p-2.5 z-50 backdrop-blur-xl"
+                  >
+                    {/* Header summary in menu */}
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 px-1">
+                      <div className="flex items-center space-x-1.5">
+                        <Trophy size={14} className="text-amber-400" />
+                        <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">Quest & Hub</span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-[#39FF14] bg-[#39FF14]/10 px-1.5 py-0.5 rounded border border-[#39FF14]/30">
+                        {userXPVal} XP
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 max-h-[55vh] overflow-y-auto pr-1 no-scrollbar">
+                      {/* XP Store */}
+                      <button
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          soundFxService.playClick();
+                          setIsStoreOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 transition-all cursor-pointer text-left"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <ShoppingBag size={15} className="text-amber-400" />
+                          <span className="text-xs font-bold">XP Store & Customizer</span>
+                        </div>
+                        <span className="text-[9px] font-mono text-amber-400 bg-amber-500/20 px-1.5 py-0.2 rounded font-bold">SHOP</span>
+                      </button>
+
+                      {/* Weekly League Podium */}
+                      <button
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          soundFxService.playClick();
+                          setIsLeagueOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-300 transition-all cursor-pointer text-left"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Trophy size={15} className="text-emerald-400" />
+                          <span className="text-xs font-bold">Weekly Diamond League</span>
+                        </div>
+                        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/20 px-1.5 py-0.2 rounded font-bold">PODIUM</span>
+                      </button>
+
+                      {/* 60s Speed Match Arena */}
+                      <button
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          soundFxService.playClick();
+                          setIsGameOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-300 transition-all cursor-pointer text-left"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Gamepad2 size={15} className="text-purple-400" />
+                          <span className="text-xs font-bold">60s Speed Match Game</span>
+                        </div>
+                        <span className="text-[9px] font-mono text-purple-400 bg-purple-500/20 px-1.5 py-0.2 rounded font-bold">PLAY</span>
+                      </button>
+
+                      {/* Smart Focus Timer */}
+                      <button
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          soundFxService.playClick();
+                          setIsFocusTimerOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-300 transition-all cursor-pointer text-left"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Timer size={15} className="text-cyan-400" />
+                          <span className="text-xs font-bold">Focus Timer Chamber</span>
+                        </div>
+                        <span className="text-[9px] font-mono text-cyan-400 bg-cyan-500/20 px-1.5 py-0.2 rounded font-bold">TIMER</span>
+                      </button>
+
+                      {/* Daily Mystery Chest */}
+                      <button
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          soundFxService.playClick();
+                          setIsChestOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 text-orange-300 transition-all cursor-pointer text-left"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Gift size={15} className="text-orange-400" />
+                          <span className="text-xs font-bold">Daily Mystery Chest</span>
+                        </div>
+                        <span className="text-[9px] font-mono text-orange-400 bg-orange-500/20 px-1.5 py-0.2 rounded font-bold">GIFT</span>
+                      </button>
+
+
+
+                      {/* Rewards & Gamification View */}
+                      <button
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          soundFxService.playClick();
+                          setIsRewardsOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/40 border border-[#39FF14]/20 text-[#39FF14] transition-all cursor-pointer text-left"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Award size={15} className="text-[#39FF14]" />
+                          <span className="text-xs font-bold">Rewards & Badges</span>
+                        </div>
+                        <span className="text-[9px] font-mono text-[#39FF14] bg-[#39FF14]/20 px-1.5 py-0.2 rounded font-bold">REWARDS</span>
+                      </button>
+
+                      {/* Student Support & Helpdesk */}
+                      <button
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          soundFxService.playClick();
+                          setActiveTab('help-support');
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-300 transition-all cursor-pointer text-left"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Headset size={15} className="text-purple-400" />
+                          <span className="text-xs font-bold">Support & Helpdesk</span>
+                        </div>
+                        {unreadSupportCount > 0 ? (
+                          <span className="text-[9px] font-mono text-black bg-[#39FF14] px-1.5 py-0.2 rounded font-bold animate-pulse">
+                            {unreadSupportCount} NEW
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-mono text-purple-400 bg-purple-500/20 px-1.5 py-0.2 rounded font-bold">HELP</span>
+                        )}
+                      </button>
+
+                      {/* Sound FX Audio Mute Toggle */}
+                      <button
+                        onClick={() => {
+                          const nextMute = soundFxService.toggleMute();
+                          setIsSoundMuted(nextMute);
+                          if (!nextMute) {
+                            soundFxService.playXP();
+                          }
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all cursor-pointer text-left"
+                      >
+                        <div className="flex items-center space-x-2">
+                          {isSoundMuted ? <VolumeX size={15} className="text-slate-400" /> : <Volume2 size={15} className="text-[#39FF14]" />}
+                          <span className="text-xs font-bold">Audio Sound FX</span>
+                        </div>
+                        <span className="text-[9px] font-mono text-slate-400 bg-white/10 px-1.5 py-0.2 rounded">
+                          {isSoundMuted ? 'MUTED' : 'ON'}
+                        </span>
+                      </button>
+
+                      {/* Test Milestone Toasts Section */}
+                      <div className="pt-2 mt-2 border-t border-white/10">
+                        <div className="text-[10px] font-mono font-bold text-[#39FF14] uppercase tracking-wider mb-1 px-1 flex items-center space-x-1">
+                          <Sparkles size={11} />
+                          <span>Test Milestone Toasts</span>
+                        </div>
+                        <div className="space-y-1">
+                          <button
+                            onClick={() => {
+                              setIsQuickMenuOpen(false);
+                              triggerMilestoneToast({
+                                type: 'xp',
+                                title: '⚡ 500 XP Milestone Reached!',
+                                value: '500 XP',
+                                description: 'Half-a-thousand XP milestone unlocked! You are in the top 5% today!',
+                                icon: '⚡',
+                                colorTheme: 'amber',
+                                actionLabel: 'View Leaderboard'
+                              });
+                            }}
+                            className="w-full flex items-center justify-between p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 transition-all cursor-pointer text-left text-xs font-bold"
+                          >
+                            <span>⚡ 500 XP Milestone</span>
+                            <span className="text-[9px] font-mono text-amber-400 bg-amber-500/20 px-1.5 py-0.2 rounded">TEST</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setIsQuickMenuOpen(false);
+                              triggerMilestoneToast({
+                                type: 'streak',
+                                title: '🔥 7-Day Streak Master!',
+                                value: '7 Days Streak',
+                                description: 'Studied for 7 full consecutive days without breaking your momentum!',
+                                icon: '🔥',
+                                colorTheme: 'amber',
+                                actionLabel: 'View Stats'
+                              });
+                            }}
+                            className="w-full flex items-center justify-between p-2 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 text-orange-300 transition-all cursor-pointer text-left text-xs font-bold"
+                          >
+                            <span>🔥 7-Day Streak Toast</span>
+                            <span className="text-[9px] font-mono text-orange-400 bg-orange-500/20 px-1.5 py-0.2 rounded">TEST</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setIsQuickMenuOpen(false);
+                              triggerMilestoneToast({
+                                type: 'level',
+                                title: '🏆 Level Up: Skilled Scholar!',
+                                value: 'Level 10 Unlocked',
+                                description: 'Rank upgraded! You unlocked Advanced Curriculum and Exclusive Badge Perks.',
+                                icon: '🏆',
+                                colorTheme: 'purple',
+                                actionLabel: 'View Profile'
+                              });
+                            }}
+                            className="w-full flex items-center justify-between p-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-300 transition-all cursor-pointer text-left text-xs font-bold"
+                          >
+                            <span>🏆 Level Up Toast</span>
+                            <span className="text-[9px] font-mono text-purple-400 bg-purple-500/20 px-1.5 py-0.2 rounded">TEST</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setIsQuickMenuOpen(false);
+                              triggerMilestoneToast({
+                                type: 'badge',
+                                title: '🏅 Badge Unlocked: 100% Quiz Ace',
+                                value: 'Perfect Score Badge',
+                                description: 'Scored 100% accuracy on a course exam. +100 Bonus XP awarded!',
+                                icon: '🏅',
+                                colorTheme: 'green',
+                                actionLabel: 'View Badges'
+                              });
+                            }}
+                            className="w-full flex items-center justify-between p-2 rounded-xl bg-[#39FF14]/10 hover:bg-[#39FF14]/20 border border-[#39FF14]/30 text-[#39FF14] transition-all cursor-pointer text-left text-xs font-bold"
+                          >
+                            <span>🏅 Badge Unlocked Toast</span>
+                            <span className="text-[9px] font-mono text-[#39FF14] bg-[#39FF14]/20 px-1.5 py-0.2 rounded">TEST</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </header>
 
@@ -737,6 +1287,16 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         >
           <Compass size={12} />
           <span>Catalog</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('leaderboard')}
+          className={`px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider whitespace-nowrap flex items-center space-x-1.5 transition-all cursor-pointer ${
+            activeTab === 'leaderboard' ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-white bg-white/5'
+          }`}
+        >
+          <Trophy size={12} />
+          <span>Leaderboard</span>
         </button>
 
         <button
@@ -767,6 +1327,21 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         >
           <Code2 size={12} />
           <span>Sandbox</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('help-support')}
+          className={`px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider whitespace-nowrap flex items-center space-x-1.5 transition-all cursor-pointer relative ${
+            activeTab === 'help-support' ? 'bg-purple-500 text-white shadow-md shadow-purple-500/20' : 'text-slate-400 hover:text-white bg-white/5'
+          }`}
+        >
+          <Headset size={12} className={unreadSupportCount > 0 ? 'text-[#39FF14]' : ''} />
+          <span>Support</span>
+          {unreadSupportCount > 0 && (
+            <span className="px-1 py-0.2 rounded-full bg-[#39FF14] text-black text-[8px] font-mono font-bold">
+              {unreadSupportCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -801,6 +1376,12 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         <FlashcardsView
           onShowNotification={onShowNotification}
         />
+      ) : activeTab === 'leaderboard' ? (
+        <LeaderboardRewardsView
+          userProfile={userProfile as any}
+          onShowNotification={onShowNotification}
+          onNavigateToCourse={() => setActiveTab('discover')}
+        />
       ) : activeTab === 'study-group' ? (
         <StudyGroupView
           userProfile={userProfile}
@@ -817,6 +1398,11 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           onShowNotification={onShowNotification}
           onOpenRewards={() => setIsRewardsOpen(true)}
           onNavigate={(route: any) => setActiveTab(route)}
+          courses={courses}
+          enrolledCourseIds={enrolledIds}
+          userCourseProgressMap={userCourseProgressMap}
+          userLessonProgressMap={userLessonProgressMap}
+          onOpenCourse={(course) => setActiveLearningCourse(course)}
         />
       ) : activeTab === 'payment-history' ? (
         <PaymentHistoryView
@@ -840,12 +1426,13 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       ) : activeTab === 'privacy-security' ? (
         <PrivacySecurityView onBack={() => setActiveTab('profile')} />
       ) : activeTab === 'help-support' ? (
-        <HelpSupportView onBack={() => setActiveTab('profile')} />
+        <HelpSupportView
+          onBack={() => setActiveTab('discover')}
+          userProfile={userProfile}
+          onNavigateToTab={(tab) => setActiveTab(tab as any)}
+        />
       ) : (
         <>
-          {/* ================= GAMIFICATION SUMMARY ================= */}
-          
-
           {/* ================= SEARCH SYSTEM ================= */}
           <section className="my-4 px-1 relative">
         <form onSubmit={handleSearchSubmit} className="relative">
@@ -1109,7 +1696,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
               >
                 {/* Background image */}
                 <img 
-                  src={banners[currentSlide].imageUrl || undefined} 
+                  src={banners[currentSlide].imageUrl?.trim() || undefined} 
                   alt={banners[currentSlide].title} 
                   className="w-full h-full object-cover brightness-[0.4]"
                 />
@@ -1266,20 +1853,10 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       {/* ================= FEATURED COURSES LIST ================= */}
       <main className="my-3 px-1 flex-1 min-h-[300px]">
         {loading ? (
-          /* Skeletons */
-          <div className="space-y-4">
-            {[1, 2].map((i) => (
-              <div key={i} className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 shimmer-effect space-y-3">
-                <div className="w-full h-36 bg-slate-800 rounded-xl" />
-                <div className="h-4 bg-slate-800 rounded w-3/4" />
-                <div className="h-3 bg-slate-800 rounded w-1/2" />
-                <div className="flex justify-between items-center pt-2">
-                  <div className="h-4 bg-slate-800 rounded w-1/4" />
-                  <div className="h-8 bg-slate-800 rounded w-1/3" />
-                </div>
-              </div>
-            ))}
-          </div>
+          <EliteLoading 
+            label="SYNCHRONIZING ACADEMIC CATALOG" 
+            subLabel="STREAMING REALTIME SCHOLAR MATRIX..." 
+          />
         ) : courses.length > 0 ? (
           <motion.div
             key={`${selectedCategory}-${sortBy}-${searchQuery}-${visibleCount}`}
@@ -1324,8 +1901,22 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                       }
                     }
                   }}
-                  whileHover={{ y: -3, transition: { duration: 0.2 } }}
+                  whileHover={{ 
+                    scale: [1, 1.018, 1.008, 1.018],
+                    y: -4,
+                    transition: {
+                      scale: {
+                        duration: 2.2,
+                        repeat: Infinity,
+                        repeatType: 'mirror',
+                        ease: 'easeInOut'
+                      },
+                      y: { duration: 0.2, ease: 'easeOut' }
+                    }
+                  }}
                   whileTap={{ scale: 0.98 }}
+                  onMouseEnter={() => preloadVideoAssets([course.videoUrl, course.previewVideoUrl, course.demoVideoUrl])}
+                  onTouchStart={() => preloadVideoAssets([course.videoUrl, course.previewVideoUrl, course.demoVideoUrl])}
                   onClick={() => setSelectedDetailsCourse(course)}
                   className="glass-panel-light hover-lift hover:border-[#39FF14]/30 rounded-2xl p-3 flex flex-col transition-all duration-300 relative group overflow-hidden cursor-pointer"
                 >
@@ -1335,7 +1926,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                   {/* Course Thumbnail */}
                   <div className="relative w-full h-36 rounded-xl overflow-hidden border border-white/5">
                     <img 
-                      src={course.thumbnail || undefined} 
+                      src={course.thumbnail?.trim() || undefined} 
                       alt={course.title} 
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
@@ -1381,13 +1972,39 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                   {/* Course Details */}
                   <div className="mt-3 flex-1 flex flex-col justify-between">
                     <div>
-                      {/* Instructor & Rating */}
+                      {/* Instructor, Rating & Timestamp Metadata */}
                       <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono">
-                        <span>👨‍🏫 {course.instructor}</span>
-                        <span className="flex items-center text-amber-400">
-                          <Star size={10} fill="currentColor" className="mr-0.5" />
-                          <strong>{(typeof course.rating === 'number' ? course.rating : Number(course.rating) || 5.0).toFixed(1)}</strong>
-                        </span>
+                        <span className="truncate max-w-[55%]">👨‍🏫 {course.instructor}</span>
+                        <div className="flex items-center space-x-2 shrink-0">
+                          {/* Timestamp Metadata Display */}
+                          {(() => {
+                            let dateBadge = '2026';
+                            try {
+                              if (course.updatedAt) {
+                                const d = typeof course.updatedAt.toDate === 'function' ? course.updatedAt.toDate() : new Date(course.updatedAt);
+                                if (!isNaN(d.getTime())) dateBadge = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                              } else if (course.lastUpdated) {
+                                dateBadge = course.lastUpdated;
+                              } else if (course.createdAt) {
+                                const d = typeof course.createdAt.toDate === 'function' ? course.createdAt.toDate() : new Date(course.createdAt);
+                                if (!isNaN(d.getTime())) dateBadge = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                              }
+                            } catch (e) {
+                              dateBadge = 'Aug 2026';
+                            }
+                            return (
+                              <span className="flex items-center space-x-1 text-[9px] text-slate-400 bg-white/5 border border-white/5 px-1.5 py-0.5 rounded">
+                                <Calendar size={9} className="text-[#39FF14]" />
+                                <span>{dateBadge}</span>
+                              </span>
+                            );
+                          })()}
+
+                          <span className="flex items-center text-amber-400 font-bold">
+                            <Star size={10} fill="currentColor" className="mr-0.5" />
+                            <span>{(typeof course.rating === 'number' ? course.rating : Number(course.rating) || 5.0).toFixed(1)}</span>
+                          </span>
+                        </div>
                       </div>
 
                       {/* Course Title */}
@@ -1395,25 +2012,92 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                         {course.title}
                       </h3>
 
-                      {/* Details row: Duration, Students */}
-                      <div className="flex items-center space-x-3 mt-2 text-[9px] font-mono text-slate-400">
-                        <span className="flex items-center">
-                          <Clock size={10} className="text-slate-500 mr-1" />
-                          {course.duration}
+                      {/* Details row: Duration, Modules, Level */}
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[9px] font-mono text-slate-400">
+                        <span className="flex items-center bg-white/[0.03] border border-white/5 px-1.5 py-0.5 rounded">
+                          <Clock size={10} className="text-[#39FF14] mr-1" />
+                          <span>{course.duration || '12 Hours'}</span>
                         </span>
-                        <span className="flex items-center">
+                        <span className="flex items-center bg-white/[0.03] border border-white/5 px-1.5 py-0.5 rounded">
+                          <BookOpen size={10} className="text-slate-400 mr-1" />
+                          <span>
+                            {course.curriculum?.reduce((acc, c) => acc + (c.lessons?.length || 0), 0) ||
+                             course.sections?.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) || 12} Lectures
+                          </span>
+                        </span>
+                        <span className="flex items-center bg-white/[0.03] border border-white/5 px-1.5 py-0.5 rounded">
                           <Users size={10} className="text-slate-500 mr-1" />
-                          {course.students?.toLocaleString() || 0} Students
+                          <span>{course.students?.toLocaleString() || 0}</span>
                         </span>
                         <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5 text-[8px] uppercase">
                           {course.level}
                         </span>
                       </div>
+
+                      {/* Study Time Investment Tracker Box */}
+                      {(() => {
+                        // Extract study hours for investment calculation
+                        const rawDur = course.duration || '10 Hours';
+                        let estHours = 10;
+                        const match = rawDur.match(/(\d+(\.\d+)?)/);
+                        if (match) {
+                          const val = parseFloat(match[1]);
+                          estHours = rawDur.toLowerCase().includes('min') ? Math.max(0.5, Math.round((val / 60) * 10) / 10) : val;
+                        }
+                        const weeklyInvestment = estHours > 12 
+                          ? `~${Math.round(estHours / 4)} hrs/wk (4 wks)` 
+                          : estHours > 4 
+                          ? `~${Math.round(estHours / 2)} hrs/wk (2 wks)` 
+                          : `~${estHours} hrs (Self-paced)`;
+
+                        const cProgress = userCourseProgressMap[course.courseId];
+                        const cLessons = userLessonProgressMap[course.courseId] || [];
+                        const maxLessonPct = cLessons.reduce((max, l) => Math.max(max, l.watchedPercentage || 0), 0);
+                        const watchPct = Math.min(100, Math.max(cProgress?.progressPercent || 0, maxLessonPct));
+                        const watchedMins = Math.round((watchPct * estHours * 60) / 100);
+
+                        return (
+                          <div className="mt-2.5 p-2 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5">
+                            <div className="flex items-center justify-between text-[9px] font-mono">
+                              <span className="text-slate-300 flex items-center space-x-1">
+                                <Hourglass size={10} className="text-[#39FF14]" />
+                                <span className="text-slate-400">Study Investment:</span>
+                                <span className="text-slate-200 font-semibold">{weeklyInvestment}</span>
+                              </span>
+                              {isEnrolled ? (
+                                <span className="text-[#39FF14] font-bold text-[9px]">
+                                  {watchedMins > 60 ? `${(watchedMins / 60).toFixed(1)}h` : `${watchedMins}m`} / {estHours}h
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 text-[8px] uppercase tracking-wider bg-white/5 px-1 py-0.2 rounded">
+                                  {estHours}h Total
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Watch Progress / Time Investment Bar */}
+                            {(isEnrolled || watchPct > 0) && (
+                              <div className="space-y-1 pt-0.5">
+                                <div className="flex justify-between items-center text-[8px] font-mono text-slate-400">
+                                  <span>Progress</span>
+                                  <span className="text-[#39FF14] font-bold">{watchPct}%</span>
+                                </div>
+                                <div className="w-full bg-white/10 rounded-full h-1 overflow-hidden">
+                                  <div 
+                                    className="bg-gradient-to-r from-[#39FF14] to-emerald-400 h-full rounded-full transition-all duration-500"
+                                    style={{ width: `${watchPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
-                    {/* Price, Share & Enroll Buttons */}
-                    <div className="mt-3.5 pt-2.5 border-t border-white/5 flex items-center justify-between">
-                      <div className="flex items-baseline space-x-1.5">
+                    {/* Price, Share, Resume & Enroll Buttons */}
+                    <div className="mt-3.5 pt-2.5 border-t border-white/5 flex items-center justify-between gap-2">
+                      <div className="flex items-baseline space-x-1.5 shrink-0">
                         {hasDiscount ? (
                           <>
                             <span className="text-sm font-bold text-[#39FF14] font-mono">
@@ -1421,9 +2105,6 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                             </span>
                             <span className="text-[10px] text-slate-500 line-through font-mono">
                               ৳{course.price?.toLocaleString()}
-                            </span>
-                            <span className="text-[8px] font-mono font-bold text-amber-400 bg-amber-400/5 px-1 py-0.5 rounded border border-amber-400/10">
-                              {discountPercent}% SAVED
                             </span>
                           </>
                         ) : (
@@ -1433,30 +2114,66 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                         )}
                       </div>
 
-                      <div className="flex items-center space-x-1.5">
+                      <div className="flex items-center space-x-1.5 overflow-x-auto scrollbar-none">
+                        {/* Resume Button if user has watched or started watching */}
+                        {(() => {
+                          const cLessons = userLessonProgressMap[course.courseId] || [];
+                          const latestWatched = cLessons
+                            .filter(l => (l.lastPositionSeconds && l.lastPositionSeconds > 0) || (l.watchedPercentage && l.watchedPercentage > 0))
+                            .sort((a, b) => new Date(b.lastUpdated || 0).getTime() - new Date(a.lastUpdated || 0).getTime())[0];
+
+                          const formatTime = (secs?: number) => {
+                            if (!secs || secs <= 0) return '00:00';
+                            const m = Math.floor(secs / 60);
+                            const s = Math.floor(secs % 60);
+                            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                          };
+
+                          if (isEnrolled && latestWatched) {
+                            return (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedResumeLesson({
+                                    lessonId: latestWatched.lessonId,
+                                    initialTime: latestWatched.lastPositionSeconds || 0
+                                  });
+                                  setActiveLearningCourse(course);
+                                }}
+                                className="px-3 py-2 bg-gradient-to-r from-[#39FF14] to-emerald-400 hover:brightness-110 text-black font-bold text-[10px] uppercase tracking-wider rounded-xl transition-all duration-300 cursor-pointer flex items-center space-x-1 shadow-[0_2px_10px_rgba(57,255,20,0.3)] shrink-0 animate-pulse"
+                                title={`Resume at ${formatTime(latestWatched.lastPositionSeconds)}`}
+                              >
+                                <Play size={10} className="fill-black" />
+                                <span>Resume ({formatTime(latestWatched.lastPositionSeconds)})</span>
+                              </button>
+                            );
+                          }
+                          return null;
+                        })()}
+
                         {/* Share Button */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleShareCourse(course);
                           }}
-                          className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white rounded-xl transition-all cursor-pointer"
+                          className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white rounded-xl transition-all cursor-pointer shrink-0"
                           title="Share Academic link"
                         >
                           <Share2 size={12} />
                         </button>
 
-                        {/* Enroll Button */}
+                        {/* Enroll / Workspace Button */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleEnrollClick(course);
                           }}
-                          className={`px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer flex items-center space-x-1 ${
+                          className={`px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer flex items-center space-x-1 shrink-0 ${
                             isPending
                               ? 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
                               : isEnrolled 
-                              ? 'bg-emerald-950/40 border border-emerald-500/30 text-emerald-400' 
+                              ? 'bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50' 
                               : 'bg-[#39FF14] hover:bg-[#32e011] text-black shadow-[0_2px_8px_rgba(57,255,20,0.2)]'
                           }`}
                         >
@@ -1480,13 +2197,25 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
 
             {/* Load More/Infinite Scroll Simulation */}
             {courses.length > visibleCount && (
-              <div className="text-center pt-2">
-                <button
-                  onClick={() => setVisibleCount((prev) => prev + 4)}
-                  className="px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-mono font-bold tracking-wider uppercase text-slate-300 transition-colors cursor-pointer"
-                >
-                  Load More Programs...
-                </button>
+              <div className="text-center pt-3 pb-2">
+                {isLoadingMore ? (
+                  <div className="max-w-md mx-auto my-2">
+                    <EliteLoading
+                      variant="card"
+                      compact
+                      label="SCANNING NEXT ACADEMIC BATCH"
+                      subLabel="FETCHING ADDITIONAL COURSES FROM SCHOLAR MATRIX..."
+                    />
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleLoadMorePrograms}
+                    className="px-6 py-2.5 bg-slate-900/80 hover:bg-slate-800 border border-[#39FF14]/30 hover:border-[#39FF14]/60 rounded-xl text-xs font-mono font-bold tracking-wider uppercase text-slate-200 transition-all cursor-pointer shadow-[0_0_15px_rgba(57,255,20,0.1)] hover:scale-105 active:scale-95 inline-flex items-center space-x-2"
+                  >
+                    <RotateCw size={14} className="text-[#39FF14]" />
+                    <span>Load More Programs...</span>
+                  </button>
+                )}
               </div>
             )}
           </motion.div>
@@ -1509,6 +2238,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           </div>
         )}
       </main>
+
         </>
       )}
 
@@ -1516,13 +2246,19 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         NEXUS PORTAL • STUDY COURSE DISCOVERY SYSTEM
       </footer>
 
-      {/* ================= PERSISTENT BOTTOM NAVIGATION BAR ================= */}
-      <div className="sticky -bottom-1 z-40 pt-2 pb-2 bg-[#0a0f1d]/95 backdrop-blur-xl border-t border-white/10 shadow-2xl rounded-2xl -mx-1 px-1">
-        <div className="glass-panel rounded-2xl p-2 flex items-center justify-around">
+      {/* ================= PERSISTENT BOTTOM NAVIGATION BAR (Auto-hides on scroll down, reveals on scroll up) ================= */}
+      <div 
+        className={`sticky bottom-0 z-40 pt-1 pb-1 sm:pt-1.5 sm:pb-1.5 bg-[#0a0f1d]/95 backdrop-blur-xl border-t border-white/10 shadow-2xl rounded-2xl -mx-1 px-1 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          isBarsVisible 
+            ? 'translate-y-0 opacity-100 pointer-events-auto' 
+            : 'translate-y-[135%] opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="glass-panel rounded-2xl p-1.5 flex items-center justify-around">
           {/* Catalog / Discover Tab */}
           <button
             onClick={() => setActiveTab('discover')}
-            className={`flex-1 py-2 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
               activeTab === 'discover'
                 ? 'bg-white/5 border border-[#39FF14]/30 text-[#39FF14]'
                 : 'text-slate-400 hover:text-white border border-transparent'
@@ -1535,7 +2271,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           {/* My Courses Tab */}
           <button
             onClick={() => setActiveTab('my-courses')}
-            className={`flex-1 py-2 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
               activeTab === 'my-courses'
                 ? 'bg-white/5 border border-[#39FF14]/30 text-[#39FF14]'
                 : 'text-slate-400 hover:text-white border border-transparent'
@@ -1555,7 +2291,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           {/* Live Classes Tab */}
           <button
             onClick={() => setActiveTab('live-classes')}
-            className={`flex-1 py-2 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
               activeTab === 'live-classes'
                 ? 'bg-white/5 border border-[#39FF14]/30 text-[#39FF14]'
                 : 'text-slate-400 hover:text-white border border-transparent'
@@ -1571,14 +2307,14 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           {/* Profile Tab */}
           <button
             onClick={() => setActiveTab('profile')}
-            className={`flex-1 py-2 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 rounded-xl flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
               activeTab === 'profile' || activeTab === 'certificates' || activeTab === 'community' || activeTab === 'account-details' || activeTab === 'privacy-security' || activeTab === 'help-support'
                 ? 'bg-white/5 border border-[#39FF14]/30 text-[#39FF14]'
                 : 'text-slate-400 hover:text-white border border-transparent'
             }`}
           >
-            <div className="w-5 h-5 rounded-full overflow-hidden border border-current">
-               {userProfile?.photoURL ? <img src={userProfile.photoURL || undefined} alt="Profile" className="w-full h-full object-cover" /> : <User size={18} />}
+            <div className="w-5 h-5 rounded-full overflow-hidden border border-current flex items-center justify-center">
+               {userProfile?.photoURL?.trim() ? <img src={userProfile.photoURL.trim()} alt="Profile" className="w-full h-full object-cover" /> : <User size={16} />}
             </div>
             <span className="text-[9px] font-mono font-bold tracking-wider uppercase">Profile</span>
           </button>
@@ -1600,6 +2336,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
       {/* AI Study Assistant */}
       <AiAssistantFAB 
         isOpen={isAiChatOpen} 
+        isVisible={true}
         onClick={() => setIsAiChatOpen(true)} 
       />
       
@@ -1616,10 +2353,61 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           <RewardsView onClose={() => setIsRewardsOpen(false)} />
         )}
 
-        {isAdminOpen && (
-          <AdminPanelModal
-            isOpen={isAdminOpen}
-            onClose={() => setIsAdminOpen(false)}
+        {isChestOpen && (
+          <DailyMysteryChestModal
+            isOpen={isChestOpen}
+            onClose={() => setIsChestOpen(false)}
+            userId={auth.currentUser?.uid || userProfile?.username || 'scholar'}
+            onRewardClaimed={() => {
+              window.dispatchEvent(new Event('nexus_xp_updated'));
+            }}
+            onShowNotification={onShowNotification}
+          />
+        )}
+
+        {isFocusTimerOpen && (
+          <SmartFocusTimerModal
+            isOpen={isFocusTimerOpen}
+            onClose={() => setIsFocusTimerOpen(false)}
+            userId={auth.currentUser?.uid || userProfile?.username || 'scholar'}
+            onShowNotification={onShowNotification}
+          />
+        )}
+
+        {isStoreOpen && (
+          <XpStoreModal
+            isOpen={isStoreOpen}
+            onClose={() => setIsStoreOpen(false)}
+            userId={auth.currentUser?.uid || userProfile?.username || 'scholar'}
+            currentUserXP={userXPVal}
+            onXPUpdated={(newXP) => {
+              setUserXPVal(newXP);
+              window.dispatchEvent(new Event('nexus_xp_updated'));
+            }}
+            onShowNotification={onShowNotification}
+          />
+        )}
+
+        {isLeagueOpen && (
+          <WeeklyLeagueModal
+            isOpen={isLeagueOpen}
+            onClose={() => setIsLeagueOpen(false)}
+            userId={auth.currentUser?.uid || userProfile?.username || 'scholar'}
+            userXP={userXPVal}
+            userName={userProfile?.fullName || userProfile?.username || 'You'}
+            userProfile={userProfile}
+          />
+        )}
+
+        {isGameOpen && (
+          <SpeedMatchGameModal
+            isOpen={isGameOpen}
+            onClose={() => setIsGameOpen(false)}
+            userId={auth.currentUser?.uid || userProfile?.username || 'scholar'}
+            onXPUpdated={(newXP) => {
+              setUserXPVal(newXP);
+              window.dispatchEvent(new Event('nexus_xp_updated'));
+            }}
             onShowNotification={onShowNotification}
           />
         )}

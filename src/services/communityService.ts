@@ -12,7 +12,7 @@ import {
   increment,
   runTransaction
 } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db, auth, sanitizeForFirestore } from './firebase';
 import {
   CommunityPost,
   CommunityReply,
@@ -205,10 +205,10 @@ export const communityService = {
         console.log('Seeding default community posts to Firestore...');
         const batch = writeBatch(db);
         DEFAULT_POSTS.forEach(post => {
-          batch.set(doc(db, 'communityPosts', post.postId), post);
+          batch.set(doc(db, 'communityPosts', post.postId), sanitizeForFirestore(post));
         });
         DEFAULT_REPLIES.forEach(reply => {
-          batch.set(doc(db, 'communityReplies', reply.replyId), reply);
+          batch.set(doc(db, 'communityReplies', reply.replyId), sanitizeForFirestore(reply));
         });
         await batch.commit();
       }
@@ -242,7 +242,7 @@ export const communityService = {
         // Attempt to write, fail silently if permissions lack
         try {
           if (auth.currentUser) {
-            await setDoc(docRef, initialRep);
+            await setDoc(docRef, sanitizeForFirestore(initialRep));
           }
         } catch (e) {
           console.warn('Could not write userReputation to Firestore:', e);
@@ -293,7 +293,7 @@ export const communityService = {
         badges.push('Academy Expert');
       }
 
-      await setDoc(docRef, {
+      await setDoc(docRef, sanitizeForFirestore({
         userId,
         userName: snap.exists() ? snap.data()?.userName || 'Academic Peer' : 'Academic Peer',
         userPhoto: snap.exists() ? snap.data()?.userPhoto || '' : '',
@@ -302,7 +302,7 @@ export const communityService = {
         reputationPoints: currentPoints,
         badges,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
 
     } catch (error) {
       console.warn('Failed to update reputation (bypassed smoothly):', error);
@@ -438,7 +438,7 @@ export const communityService = {
         updatedAt: new Date().toISOString()
       };
 
-      await setDoc(doc(db, collPath, postId), newPost);
+      await setDoc(doc(db, collPath, postId), sanitizeForFirestore(newPost));
 
       // Award reputation points for asking a question (+5)
       await this.awardReputation(auth.currentUser.uid, 5, 'question');
@@ -508,7 +508,7 @@ export const communityService = {
       };
 
       // Set inside Firestore
-      await setDoc(doc(db, collPath, replyId), newReply);
+      await setDoc(doc(db, collPath, replyId), sanitizeForFirestore(newReply));
 
       // Increment reply counter on Post
       try {
@@ -696,7 +696,7 @@ export const communityService = {
           type,
           createdAt: new Date().toISOString()
         };
-        await setDoc(likeDocRef, newReaction);
+        await setDoc(likeDocRef, sanitizeForFirestore(newReaction));
 
         const updateField = type === 'like' ? 'likesCount' : type === 'helpful' ? 'helpfulCount' : 'heartCount';
         await updateDoc(postRef, {
@@ -749,7 +749,7 @@ export const communityService = {
           userId,
           createdAt: new Date().toISOString()
         };
-        await setDoc(bookmarkDocRef, newBookmark);
+        await setDoc(bookmarkDocRef, sanitizeForFirestore(newBookmark));
         return true;
       }
     } catch (error) {
@@ -798,7 +798,7 @@ export const communityService = {
         status: 'pending',
         createdAt: new Date().toISOString()
       };
-      await setDoc(doc(db, collPath, reportId), newReport);
+      await setDoc(doc(db, collPath, reportId), sanitizeForFirestore(newReport));
 
       // Flag post in Firestore if reports accumulate (e.g. hide after 3 reports)
       const postRef = doc(db, 'communityPosts', postId);

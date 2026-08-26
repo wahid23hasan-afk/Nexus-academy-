@@ -1043,6 +1043,38 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["role", "text", "timestamp"]
+    },
+    "SupportTicket": {
+      "title": "Student Support Ticket",
+      "description": "Real-time support tickets submitted by students to admins",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "subject": { "type": "string" },
+        "category": { "type": "string" },
+        "message": { "type": "string" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "status": { "type": "string", "enum": ["open", "in_progress", "resolved", "closed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "replies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "message": { "type": "string" },
+              "senderId": { "type": "string" },
+              "senderName": { "type": "string" },
+              "adminId": { "type": "string" },
+              "createdAt": { "type": "string", "format": "date-time" }
+            },
+            "required": ["message", "createdAt"]
+          }
+        }
+      },
+      "required": ["userId", "subject", "message", "status", "priority", "createdAt"]
     }
   },
   "firestore": {
@@ -1257,6 +1289,10 @@
     "/chatHistory/{sessionId}/messages/{messageId}": {
       "schema": "ChatMessage",
       "description": "Messages inside an AI Chat Session"
+    },
+    "/support_tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "Student support tickets and inquiries"
     }
   }
 }

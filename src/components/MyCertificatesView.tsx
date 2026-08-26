@@ -19,6 +19,7 @@ import { certificateService } from '../services/certificateService';
 import { PremiumCertificatePreview } from './PremiumCertificatePreview';
 import { Course } from '../types/course';
 import { auth } from '../services/firebase';
+import { EliteLoading } from './EliteLoading';
 
 interface MyCertificatesViewProps {
   userProfile: { fullName: string; username: string; photoURL?: string } | null;
@@ -167,12 +168,7 @@ export function MyCertificatesView({
 
       {/* Primary Certificates Stack */}
       {loading ? (
-        <div className="py-20 flex flex-col items-center justify-center space-y-3">
-          <Loader2 className="text-[#39FF14] animate-spin" size={24} />
-          <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest animate-pulse">
-            Retrieving secure verified credentials...
-          </p>
-        </div>
+        <EliteLoading label="RETRIEVING VERIFIED CERTIFICATES" subLabel="QUERYING CREDENTIAL LEDGER..." />
       ) : sorted.length === 0 ? (
         <div className="border border-dashed border-white/5 rounded-3xl p-10 text-center space-y-4 bg-slate-950/20 backdrop-blur-sm">
           <div className="w-12 h-12 bg-white/5 border border-white/10 rounded-full flex items-center justify-center mx-auto text-slate-500">

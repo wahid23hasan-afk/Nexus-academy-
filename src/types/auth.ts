@@ -1,6 +1,16 @@
 export type AppView = 'welcome' | 'login' | 'register' | 'verify' | 'profile-setup';
 
+export interface UserBadgeItem {
+  id: string;
+  title: string;
+  icon: string;
+  unlockedAt: string;
+  description?: string;
+  xpReward?: number;
+}
+
 export interface User {
+  uid?: string;
   fullName: string;
   username: string;
   email: string;
@@ -9,6 +19,14 @@ export interface User {
   verified: boolean;
   verificationCode?: string;
   createdAt: string;
+  photoURL?: string;
+  bio?: string;
+  role?: string;
+  xp?: number;
+  streak?: number;
+  lastActiveDate?: string;
+  level?: number;
+  badges?: UserBadgeItem[];
 }
 
 export interface ValidationState {

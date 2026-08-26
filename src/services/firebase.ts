@@ -46,4 +46,37 @@ if (typeof window !== 'undefined') {
 // Initialize Storage
 export const storage = getStorage(app);
 
+/**
+ * Recursively strips keys with `undefined` values from objects/arrays before passing to Firestore.
+ * Firestore SDK throws a runtime error if any property value is `undefined`.
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return data;
+  }
+
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+
+  if (typeof data === 'object') {
+    const proto = Object.getPrototypeOf(data);
+    if (proto !== null && proto !== Object.prototype) {
+      return data;
+    }
+
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data as Record<string, any>)) {
+      if (value !== undefined) {
+        cleaned[key] = sanitizeForFirestore(value);
+      }
+    }
+    return cleaned as T;
+  }
+
+  return data;
+}
+
 export default app;
