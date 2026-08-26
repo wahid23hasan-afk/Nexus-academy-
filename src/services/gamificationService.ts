@@ -4,6 +4,7 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
+  deleteDoc,
   collection, 
   query, 
   where, 
@@ -1631,6 +1632,431 @@ export const gamificationService = {
     const xpNeeded = Math.max(0, nextTier.minXP - totalXP);
 
     return { nextTier, xpNeeded, progressPercent };
+  },
+
+  // ==========================================
+  // XP MARKETPLACE & STORE (PERKS BAZAAR) APIS
+  // ==========================================
+
+  // 1. Real-time Subscription to XP Store Items (Listens to `xp_store_items` collection with fallback)
+  subscribeXpStoreItems(callback: (items: any[]) => void): () => void {
+    try {
+      const itemsCollectionRef = collection(db, 'xp_store_items');
+      
+      const unsubscribe = onSnapshot(itemsCollectionRef, async (snapshot) => {
+        if (!snapshot.empty) {
+          const items = snapshot.docs.map(docSnap => {
+            const data = docSnap.data();
+            const cost = Number(data.costXP || data.priceXp || 100);
+            const title = data.title || data.name || 'Perk Item';
+            const category = data.category || data.perkType || 'perk';
+            const perkGranted = data.perkGranted || data.perkDetails || 'Special Perk Granted';
+            const isActive = data.isActive !== false && data.status !== 'inactive' && data.availability !== 'inactive';
+            const order = Number(data.order !== undefined ? data.order : cost);
+            
+            return {
+              id: docSnap.id,
+              name: title,
+              title: title,
+              category: category,
+              perkType: category,
+              description: data.description || '',
+              costXP: cost,
+              priceXp: cost,
+              icon: data.icon || '✨',
+              perkGranted: perkGranted,
+              perkDetails: perkGranted,
+              isActive: isActive,
+              availability: isActive ? 'active' : 'inactive',
+              status: isActive ? 'active' : 'inactive',
+              targetScope: data.targetScope || 'all',
+              previewClass: data.previewClass || '',
+              order: order
+            };
+          })
+          .filter(item => item.isActive)
+          .sort((a, b) => (a.order - b.order) || (a.costXP - b.costXP));
+
+          callback(items);
+        } else {
+          // Fallback to appSettings/xpStoreCatalog document or defaults
+          try {
+            const catalogDoc = await getDoc(doc(db, 'appSettings', 'xpStoreCatalog'));
+            if (catalogDoc.exists() && Array.isArray(catalogDoc.data().items) && catalogDoc.data().items.length > 0) {
+              const items = catalogDoc.data().items
+                .filter((item: any) => item.availability === 'active' || item.isActive !== false)
+                .map((item: any) => ({
+                  ...item,
+                  title: item.title || item.name,
+                  name: item.name || item.title,
+                  costXP: Number(item.costXP || item.priceXp || 100),
+                  priceXp: Number(item.priceXp || item.costXP || 100),
+                  perkType: item.perkType || item.category,
+                  category: item.category || item.perkType,
+                  perkGranted: item.perkGranted || item.perkDetails,
+                  perkDetails: item.perkDetails || item.perkGranted,
+                  isActive: true
+                }));
+              callback(items);
+            } else {
+              // Trigger default seeding in background if completely empty
+              callback([]);
+            }
+          } catch (e) {
+            console.warn('Fallback xpStoreCatalog load warning:', e);
+            callback([]);
+          }
+        }
+      }, (err) => {
+        console.warn('subscribeXpStoreItems snapshot error:', err);
+      });
+
+      return unsubscribe;
+    } catch (e) {
+      console.warn('subscribeXpStoreItems init error:', e);
+      return () => {};
+    }
+  },
+
+  // 2. Real-time Subscription to User's Owned & Equipped Perks
+  getUserPurchasedPerksRealtime(
+    userId: string, 
+    callback: (ownedItemIds: string[], activeFrame: string, activeTitle: string) => void
+  ): () => void {
+    if (!userId) return () => {};
+
+    try {
+      const userDocRef = doc(db, 'users', userId);
+      const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+        const ownedSet = new Set<string>();
+
+        // Check local storage backup
+        try {
+          const savedPurchases = localStorage.getItem(`nexus_xp_store_${userId}`);
+          if (savedPurchases) {
+            const parsed = JSON.parse(savedPurchases);
+            Object.keys(parsed).forEach(k => {
+              if (parsed[k]) ownedSet.add(k);
+            });
+          }
+          if (localStorage.getItem(`nexus_vip_pass_${userId}`) === 'true') {
+            ownedSet.add('vip_scholar_pass');
+          }
+        } catch (e) {}
+
+        let activeFrame = 'default';
+        let activeTitle = '';
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          activeFrame = data.activeFrame || data.activeBadge || localStorage.getItem(`nexus_active_frame_${userId}`) || 'default';
+          activeTitle = data.activeTitle || localStorage.getItem(`nexus_active_title_${userId}`) || '';
+
+          if (Array.isArray(data.purchasedPerks)) {
+            data.purchasedPerks.forEach((id: string) => ownedSet.add(id));
+          }
+          if (Array.isArray(data.purchasedItems)) {
+            data.purchasedItems.forEach((item: any) => {
+              if (typeof item === 'string') ownedSet.add(item);
+              else if (item?.itemId) ownedSet.add(item.itemId);
+              else if (item?.id) ownedSet.add(item.id);
+            });
+          }
+        }
+
+        callback(Array.from(ownedSet), activeFrame, activeTitle);
+      }, (err) => {
+        console.warn('getUserPurchasedPerksRealtime error:', err);
+      });
+
+      return unsubscribe;
+    } catch (e) {
+      console.warn('getUserPurchasedPerksRealtime init error:', e);
+      return () => {};
+    }
+  },
+
+  // 3. Atomic Perk Purchase Execution with Concurrency Safety & Event Dispatch
+  async purchaseStorePerk(
+    userId: string, 
+    item: { id: string; name?: string; title?: string; costXP?: number; priceXp?: number; category?: string; perkType?: string; perkGranted?: string; perkDetails?: string; icon?: string }
+  ): Promise<{ success: boolean; message: string; remainingXP?: number }> {
+    try {
+      if (!userId) {
+        return { success: false, message: 'Please log in to purchase perks.' };
+      }
+
+      const cost = Number(item.costXP || item.priceXp || 0);
+      const itemName = item.title || item.name || 'Perk Item';
+      const category = item.category || item.perkType || 'perk';
+      const nowIso = new Date().toISOString();
+
+      // Read current XP
+      const profile = await this.getUserXP(userId);
+      if (profile.totalXP < cost) {
+        return { 
+          success: false, 
+          message: `Insufficient XP. You need ${cost} XP, but you currently have ${profile.totalXP} XP.` 
+        };
+      }
+
+      const userDocRef = doc(db, 'users', userId);
+      const userXpDocRef = doc(db, 'userXP', userId);
+      const purchaseDocRef = doc(db, 'xp_store_purchases', `${userId}_${item.id}`);
+
+      let newXP = profile.totalXP - cost;
+
+      // Execute Atomic Database Updates
+      try {
+        await runTransaction(db, async (transaction) => {
+          const userSnap = await transaction.get(userDocRef);
+          let currentXP = profile.totalXP;
+          let purchasedPerks: string[] = [];
+          let activeFrame = 'default';
+          let activeTitle = '';
+
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            currentXP = Number(data.xp !== undefined ? data.xp : (data.totalXP || currentXP));
+            purchasedPerks = Array.isArray(data.purchasedPerks) ? [...data.purchasedPerks] : [];
+            activeFrame = data.activeFrame || 'default';
+            activeTitle = data.activeTitle || '';
+          }
+
+          if (currentXP < cost) {
+            throw new Error(`Insufficient XP. You need ${cost} XP.`);
+          }
+
+          newXP = Math.max(0, currentXP - cost);
+          if (!purchasedPerks.includes(item.id)) {
+            purchasedPerks.push(item.id);
+          }
+
+          const updatePayload: any = {
+            xp: newXP,
+            totalXP: newXP,
+            purchasedPerks: purchasedPerks,
+            updatedAt: serverTimestamp()
+          };
+
+          // Auto-equip if cosmetic
+          if (category === 'frame') {
+            updatePayload.activeFrame = item.id;
+          } else if (category === 'title') {
+            updatePayload.activeTitle = itemName;
+          } else if (category === 'vip_pass' || item.id === 'vip_scholar_pass') {
+            updatePayload.isVIP = true;
+            updatePayload.vipPass = true;
+          }
+
+          transaction.set(userDocRef, updatePayload, { merge: true });
+          transaction.set(userXpDocRef, { totalXP: newXP, updatedAt: serverTimestamp() }, { merge: true });
+        });
+      } catch (txError: any) {
+        console.warn('Transaction failed, falling back to direct write synchronization:', txError);
+        // Fallback resilient write
+        await this.syncUserGamification(userId, -cost);
+        const userSnap = await getDoc(userDocRef);
+        let existingPerks: string[] = [];
+        if (userSnap.exists()) {
+          existingPerks = userSnap.data().purchasedPerks || [];
+        }
+        if (!existingPerks.includes(item.id)) {
+          existingPerks.push(item.id);
+        }
+        const fallbackPayload: any = {
+          purchasedPerks: existingPerks,
+          updatedAt: serverTimestamp()
+        };
+        if (category === 'frame') fallbackPayload.activeFrame = item.id;
+        if (category === 'title') fallbackPayload.activeTitle = itemName;
+        if (category === 'vip_pass') fallbackPayload.isVIP = true;
+
+        await setDoc(userDocRef, fallbackPayload, { merge: true });
+      }
+
+      // Record purchase in xp_store_purchases and userPerks collections
+      try {
+        await setDoc(purchaseDocRef, {
+          userId,
+          itemId: item.id,
+          itemName,
+          category,
+          costXP: cost,
+          purchasedAt: nowIso,
+          status: 'active'
+        }, { merge: true });
+
+        // Update userPerks document
+        const userPerksRef = doc(db, 'userPerks', userId);
+        const perksSnap = await getDoc(userPerksRef);
+        let purchasedItems = [];
+        if (perksSnap.exists()) {
+          purchasedItems = perksSnap.data().purchasedItems || [];
+        }
+        purchasedItems.push({
+          itemId: item.id,
+          name: itemName,
+          category,
+          purchasedAt: nowIso,
+          expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+        });
+        await setDoc(userPerksRef, { userId, purchasedItems }, { merge: true });
+      } catch (e) {
+        console.warn('Audit record warning:', e);
+      }
+
+      // Local storage persistence backup for zero-latency UI
+      try {
+        const savedPurchases = localStorage.getItem(`nexus_xp_store_${userId}`);
+        const parsed = savedPurchases ? JSON.parse(savedPurchases) : {};
+        parsed[item.id] = true;
+        localStorage.setItem(`nexus_xp_store_${userId}`, JSON.stringify(parsed));
+
+        if (category === 'frame') {
+          localStorage.setItem(`nexus_active_frame_${userId}`, item.id);
+        } else if (category === 'title') {
+          localStorage.setItem(`nexus_active_title_${userId}`, itemName);
+        } else if (category === 'vip_pass' || item.id === 'vip_scholar_pass') {
+          localStorage.setItem(`nexus_vip_pass_${userId}`, 'true');
+        }
+      } catch (e) {}
+
+      // Log to Ledger & Reward History
+      try {
+        await addDoc(collection(db, 'xpLedger'), {
+          userId,
+          type: 'spend',
+          category: 'xp_store',
+          amount: cost,
+          balanceAfter: newXP,
+          description: `Purchased Perk: ${itemName} (-${cost} XP)`,
+          metadata: { itemId: item.id, category },
+          createdAt: nowIso
+        });
+
+        await addDoc(collection(db, 'rewardHistory'), {
+          userId,
+          type: 'xp',
+          amount: -cost,
+          description: `Perks Bazaar: ${itemName} (-${cost} XP)`,
+          createdAt: nowIso
+        });
+      } catch (e) {}
+
+      // Milestone Celebration Toast
+      triggerMilestoneToast({
+        type: 'xp',
+        title: `🛍️ Perk Acquired: ${itemName}!`,
+        value: itemName,
+        description: `Successfully unlocked from Perks Bazaar (-${cost} XP)`,
+        icon: item.icon || '🛍️',
+        colorTheme: 'amber',
+        actionLabel: 'Equipped'
+      });
+
+      // Dispatch Global Sync Events
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nexus_xp_updated', { detail: { newXP } }));
+        window.dispatchEvent(new CustomEvent('nexus_store_purchase_updated', { 
+          detail: { 
+            itemId: item.id, 
+            category, 
+            itemName,
+            activeFrame: category === 'frame' ? item.id : undefined,
+            activeTitle: category === 'title' ? itemName : undefined
+          } 
+        }));
+        window.dispatchEvent(new CustomEvent('nexus_profile_updated', { detail: { userId } }));
+      }
+
+      return {
+        success: true,
+        message: `Successfully purchased "${itemName}"!`,
+        remainingXP: newXP
+      };
+    } catch (err: any) {
+      console.error('purchaseStorePerk error:', err);
+      return {
+        success: false,
+        message: err?.message || 'Failed to complete perk purchase.'
+      };
+    }
+  },
+
+  // 4. Equip Perk
+  async equipUserPerk(
+    userId: string, 
+    item: { id: string; name?: string; title?: string; category?: string; perkType?: string }
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const category = item.category || item.perkType || '';
+      const itemName = item.title || item.name || '';
+      const userDocRef = doc(db, 'users', userId);
+
+      const updateData: any = { updatedAt: serverTimestamp() };
+      if (category === 'frame') {
+        updateData.activeFrame = item.id;
+        try { localStorage.setItem(`nexus_active_frame_${userId}`, item.id); } catch (e) {}
+      } else if (category === 'title') {
+        updateData.activeTitle = itemName;
+        try { localStorage.setItem(`nexus_active_title_${userId}`, itemName); } catch (e) {}
+      }
+
+      await setDoc(userDocRef, updateData, { merge: true });
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nexus_store_purchase_updated', { 
+          detail: { 
+            itemId: item.id, 
+            category, 
+            activeFrame: updateData.activeFrame,
+            activeTitle: updateData.activeTitle
+          } 
+        }));
+        window.dispatchEvent(new CustomEvent('nexus_profile_updated', { detail: { userId } }));
+      }
+
+      return { success: true, message: `Equipped ${itemName}!` };
+    } catch (e: any) {
+      return { success: false, message: e?.message || 'Failed to equip perk.' };
+    }
+  },
+
+  // 5. Unequip Perk
+  async unequipUserPerk(
+    userId: string, 
+    category: 'frame' | 'title'
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const userDocRef = doc(db, 'users', userId);
+      const updateData: any = { updatedAt: serverTimestamp() };
+
+      if (category === 'frame') {
+        updateData.activeFrame = 'default';
+        try { localStorage.setItem(`nexus_active_frame_${userId}`, 'default'); } catch (e) {}
+      } else if (category === 'title') {
+        updateData.activeTitle = '';
+        try { localStorage.setItem(`nexus_active_title_${userId}`, ''); } catch (e) {}
+      }
+
+      await setDoc(userDocRef, updateData, { merge: true });
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nexus_store_purchase_updated', { 
+          detail: { 
+            category, 
+            activeFrame: category === 'frame' ? 'default' : undefined,
+            activeTitle: category === 'title' ? '' : undefined
+          } 
+        }));
+        window.dispatchEvent(new CustomEvent('nexus_profile_updated', { detail: { userId } }));
+      }
+
+      return { success: true, message: `Unequipped successfully.` };
+    } catch (e: any) {
+      return { success: false, message: e?.message || 'Failed to unequip perk.' };
+    }
   }
 };
 

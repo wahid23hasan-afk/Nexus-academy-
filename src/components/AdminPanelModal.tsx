@@ -66,7 +66,7 @@ import { liveService } from '../services/liveService';
 import { LiveClass, LiveClassStatus } from '../types/live';
 import { db, storage } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, onSnapshot, query, arrayUnion } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, deleteDoc, getDocs, serverTimestamp, collection, onSnapshot, query, arrayUnion } from 'firebase/firestore';
 import { CourseSection, CourseLesson } from '../types/course';
 import { SmartVideoPlayer } from './SmartVideoPlayer';
 import { StoreItem, DEFAULT_STORE_ITEMS } from './XpStoreModal';
@@ -189,7 +189,7 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
   const [savingLiveClass, setSavingLiveClass] = useState<boolean>(false);
 
   const [storeItemName, setStoreItemName] = useState<string>('');
-  const [storeItemCategory, setStoreItemCategory] = useState<'frame' | 'title' | 'shield' | 'lesson_access' | 'certificate_badge' | 'vip_pass'>('lesson_access');
+  const [storeItemCategory, setStoreItemCategory] = useState<'frame' | 'title' | 'shield' | 'lesson_access' | 'certificate_badge' | 'vip_pass' | string>('lesson_access');
   const [storeItemDescription, setStoreItemDescription] = useState<string>('');
   const [storeItemPerkGranted, setStoreItemPerkGranted] = useState<string>('');
   const [storeItemCostXP, setStoreItemCostXP] = useState<number>(150);
@@ -1127,6 +1127,29 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
   const loadXpStoreCatalog = async () => {
     setLoadingStoreCatalog(true);
     try {
+      // 1. Try reading from xp_store_items collection
+      const snapCollection = await getDocs(collection(db, 'xp_store_items'));
+      if (!snapCollection.empty) {
+        const items = snapCollection.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.title || data.name || 'Perk Item',
+            category: data.category || data.perkType || 'perk',
+            description: data.description || '',
+            perkGranted: data.perkGranted || data.perkDetails || '',
+            costXP: Number(data.costXP || data.priceXp || 100),
+            icon: data.icon || '✨',
+            availability: (data.isActive !== false && data.status !== 'inactive' && data.availability !== 'inactive') ? 'active' : 'inactive',
+            targetScope: data.targetScope || 'all',
+            previewClass: data.previewClass || ''
+          } as StoreItem;
+        });
+        setXpStoreItems(items);
+        return;
+      }
+
+      // 2. Fallback to appSettings/xpStoreCatalog document
       const docRef = doc(db, 'appSettings', 'xpStoreCatalog');
       const snap = await getDoc(docRef);
       if (snap.exists() && snap.data()?.items && Array.isArray(snap.data().items)) {
@@ -1134,6 +1157,29 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
       } else {
         setXpStoreItems(DEFAULT_STORE_ITEMS);
         await setDoc(docRef, { items: DEFAULT_STORE_ITEMS, updatedAt: serverTimestamp() });
+        // Seed collection as well
+        for (const itm of DEFAULT_STORE_ITEMS) {
+          await setDoc(doc(db, 'xp_store_items', itm.id), {
+            id: itm.id,
+            title: itm.name,
+            name: itm.name,
+            category: itm.category,
+            perkType: itm.category,
+            description: itm.description,
+            perkGranted: itm.perkGranted || itm.name,
+            perkDetails: itm.perkGranted || itm.name,
+            costXP: itm.costXP,
+            priceXp: itm.costXP,
+            icon: itm.icon,
+            availability: itm.availability || 'active',
+            status: itm.availability || 'active',
+            isActive: itm.availability !== 'inactive',
+            targetScope: itm.targetScope || 'all',
+            previewClass: itm.previewClass || '',
+            order: itm.costXP,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }
       }
     } catch (err) {
       console.error('Error loading XP store catalog:', err);
@@ -1171,6 +1217,27 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
         updatedItems = [newItem, ...xpStoreItems];
       }
 
+      // Write to both xp_store_items collection AND appSettings/xpStoreCatalog document
+      await setDoc(doc(db, 'xp_store_items', idToUse), {
+        id: idToUse,
+        title: newItem.name,
+        name: newItem.name,
+        category: newItem.category,
+        perkType: newItem.category,
+        description: newItem.description,
+        perkGranted: newItem.perkGranted,
+        perkDetails: newItem.perkGranted,
+        costXP: newItem.costXP,
+        priceXp: newItem.costXP,
+        icon: newItem.icon,
+        availability: newItem.availability,
+        status: newItem.availability,
+        isActive: newItem.availability === 'active',
+        targetScope: newItem.targetScope,
+        order: newItem.costXP,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
       await setDoc(doc(db, 'appSettings', 'xpStoreCatalog'), {
         items: updatedItems,
         updatedAt: serverTimestamp()
@@ -1194,6 +1261,15 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
   const handleDeleteStoreItem = async (itemId: string) => {
     try {
       const updated = xpStoreItems.filter(i => i.id !== itemId);
+      
+      // Delete from xp_store_items collection
+      try {
+        await deleteDoc(doc(db, 'xp_store_items', itemId));
+      } catch (e) {
+        console.warn('xp_store_items doc delete warning:', e);
+      }
+
+      // Update appSettings/xpStoreCatalog
       await setDoc(doc(db, 'appSettings', 'xpStoreCatalog'), {
         items: updated,
         updatedAt: serverTimestamp()
@@ -1207,13 +1283,27 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
 
   const handleToggleStoreItemStatus = async (itemId: string) => {
     try {
+      let newStatus: 'active' | 'inactive' = 'active';
       const updated = xpStoreItems.map(i => {
         if (i.id === itemId) {
-          const newStatus = i.availability === 'inactive' ? 'active' : 'inactive';
+          newStatus = i.availability === 'inactive' ? 'active' : 'inactive';
           return { ...i, availability: newStatus as 'active' | 'inactive' };
         }
         return i;
       });
+
+      // Update xp_store_items collection
+      try {
+        await setDoc(doc(db, 'xp_store_items', itemId), {
+          availability: newStatus,
+          status: newStatus,
+          isActive: newStatus === 'active',
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('xp_store_items toggle warning:', e);
+      }
+
       await setDoc(doc(db, 'appSettings', 'xpStoreCatalog'), {
         items: updated,
         updatedAt: serverTimestamp()
