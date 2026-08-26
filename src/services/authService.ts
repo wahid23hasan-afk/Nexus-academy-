@@ -148,7 +148,7 @@ export const authService = {
         username: username.toLowerCase().trim(),
         email: email.toLowerCase().trim(),
         phone: phone ? phone.trim() : null,
-        verified: false,
+        verified: !ENABLE_EMAIL_VERIFICATION,
         createdAt: new Date().toISOString(),
       };
 
