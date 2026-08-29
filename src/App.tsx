@@ -23,6 +23,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { authService } from './services/authService';
 import { systemSettingsService, SystemSettings, DEFAULT_SYSTEM_SETTINGS } from './services/systemSettingsService';
+import { oneSignalService } from './services/oneSignalService';
 import { ENABLE_EMAIL_VERIFICATION } from './config';
 import { Check, X, Bell, Copy, Shield, LogOut, GraduationCap, Calendar, Mail, User as UserIcon, WifiOff, Wrench } from 'lucide-react';
 
@@ -171,6 +172,13 @@ export default function App() {
     }
   }, [userProfile]);
 
+  // Initialize OneSignal Push Notification SDK on App Launch
+  useEffect(() => {
+    oneSignalService.initOneSignal().catch((err) => {
+      console.warn('OneSignal Push SDK initialization notice:', err);
+    });
+  }, []);
+
   // Firebase Authentication State Observer (Session Persistence & Auto Login)
   useEffect(() => {
     let isMounted = true;
@@ -207,6 +215,9 @@ export default function App() {
             setUserProfile(p);
             try { localStorage.setItem('nexus_cached_user_profile', JSON.stringify(p)); } catch (e) {}
             setIsProfileCompleted(result.profileCompleted ?? true);
+
+            // Link User with OneSignal External ID & Enrolled Courses Tags
+            oneSignalService.linkUser(freshUser.uid, freshUser.email, data?.enrolledCourses || []);
           }
         } catch (err) {
           console.warn('Profile read notice in App (using authenticated fallback):', err);
@@ -224,10 +235,16 @@ export default function App() {
             });
             // Do not kick the user out if authenticated
             setIsProfileCompleted(true);
+
+            // Link fallback user credentials with OneSignal
+            oneSignalService.linkUser(freshUser.uid, freshUser.email, []);
           }
         }
       } else {
         if (isMounted) {
+          // Disconnect user from OneSignal notifications on logout
+          oneSignalService.unlinkUser().catch(() => {});
+
           // Bug #2: Offline session preservation check
           if (!navigator.onLine) {
             const cachedStr = localStorage.getItem('nexus_cached_user_profile');

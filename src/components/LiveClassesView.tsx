@@ -29,6 +29,7 @@ import { liveService } from '../services/liveService';
 import { LiveClass, LiveAttendance, LiveChatMessage } from '../types/live';
 import { auth } from '../services/firebase';
 import { gamificationService } from '../services/gamificationService';
+import { oneSignalService } from '../services/oneSignalService';
 
 /* ========================================================
    CALENDAR EXPORT UTILITIES (Google Calendar & iCal .ics)
@@ -147,7 +148,7 @@ export function LiveClassesView({
 
     // Subscribe to real-time live classes updates from Firestore
     const unsubscribe = liveService.listenToLiveClasses((liveData) => {
-      if (liveData && liveData.length > 0) {
+      if (liveData) {
         setClasses(liveData);
         setLoading(false);
       }
@@ -183,7 +184,10 @@ export function LiveClassesView({
     const state = await liveService.toggleReminder(classId, userId);
     setReminders(prev => ({ ...prev, [classId]: state }));
     if (state) {
-      onShowNotification('Push alerts enabled. You will receive an FCM notification 10 minutes prior.', 'success');
+      if (oneSignalService.getPermissionStatus() !== 'granted') {
+        oneSignalService.requestPushPermission().catch(() => {});
+      }
+      onShowNotification('Push alerts enabled. You will receive a direct notification 10 minutes prior.', 'success');
     } else {
       onShowNotification('Class alerts deactivated.', 'error');
     }

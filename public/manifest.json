@@ -3,14 +3,15 @@
   "name": "Nexus Academy Study Platform",
   "icons": [
     {
-      "src": "/favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ],
   "start_url": "/",
-  "background_color": "#0a0f1d",
-  "theme_color": "#0a0f1d",
+  "background_color": "#050811",
+  "theme_color": "#050811",
   "display": "standalone",
   "orientation": "portrait"
 }

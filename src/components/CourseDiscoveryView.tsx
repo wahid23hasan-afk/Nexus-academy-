@@ -220,6 +220,10 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
   );
 
   useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [activeTab]);
+
+  useEffect(() => {
     const unsubCat = onSnapshot(
       collection(db, 'categories'),
       (snap) => {
@@ -1017,7 +1021,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
     <div className="flex-1 flex flex-col justify-between py-1 px-1 text-slate-100 max-w-lg mx-auto w-full relative pb-28">
       
       {/* ================= HEADER ================= */}
-      <header className="flex items-center justify-between gap-2 py-2.5 px-1.5 border-b border-white/5 relative z-10 bg-[#0a0f1d]">
+      <header className="flex items-center justify-between gap-2 py-2.5 px-1.5 border-b border-white/5 relative z-[999] bg-[#0a0f1d]">
         {/* Left: User Avatar & Greetings */}
         <div className="flex items-center space-x-2.5 min-w-0 shrink">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-[#39FF14]/30 overflow-hidden flex items-center justify-center shadow-[0_0_12px_rgba(57,255,20,0.15)] shrink-0">
@@ -1051,21 +1055,8 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           </div>
         </div>
 
-        {/* Right: Download App, Streak Counter, Notification and 3-Line Quest/Rewards Menu Button */}
+        {/* Right: Streak Counter, Notification and 3-Line Quest/Rewards Menu Button */}
         <div className="flex items-center space-x-1.5 shrink-0 pl-1 relative">
-          {/* Glowing Download App Button */}
-          <button
-            onClick={() => {
-              soundFxService.playClick();
-              setIsDownloadModalOpen(true);
-            }}
-            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-[#39FF14]/20 via-emerald-500/20 to-[#39FF14]/10 border border-[#39FF14]/50 text-[#39FF14] font-mono text-[11px] font-bold shrink-0 shadow-[0_0_12px_rgba(57,255,20,0.25)] hover:bg-[#39FF14]/30 hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all cursor-pointer select-none"
-            title="Download App / Install PWA"
-          >
-            <Smartphone size={13} className="text-[#39FF14] animate-bounce" />
-            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider">App</span>
-          </button>
-
           {/* Daily Streak Counter Header Pill */}
           <button
             onClick={() => {
@@ -1127,7 +1118,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                 <>
                   {/* Backdrop overlay to close when clicking outside */}
                   <div
-                    className="fixed inset-0 z-40"
+                    className="fixed inset-0 z-[9998] bg-black/50 backdrop-blur-xs"
                     onClick={() => setIsQuickMenuOpen(false)}
                   />
 
@@ -1136,7 +1127,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -8, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-12 w-64 rounded-2xl bg-[#0d1527] border border-[#39FF14]/30 shadow-[0_12px_36px_rgba(0,0,0,0.85)] p-2.5 z-50 backdrop-blur-xl"
+                    className="absolute right-0 top-12 w-64 rounded-2xl bg-[#0d1527] border border-[#39FF14]/40 shadow-[0_16px_48px_rgba(0,0,0,0.95)] p-2.5 z-[9999] backdrop-blur-xl"
                   >
                     {/* Header summary in menu */}
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 px-1">
@@ -1144,28 +1135,24 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                         <Trophy size={14} className="text-amber-400" />
                         <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">Quest & Hub</span>
                       </div>
-                      <span className="text-[10px] font-mono font-bold text-[#39FF14] bg-[#39FF14]/10 px-1.5 py-0.5 rounded border border-[#39FF14]/30">
-                        {userXPVal} XP
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[10px] font-mono font-bold text-[#39FF14] bg-[#39FF14]/10 px-1.5 py-0.5 rounded border border-[#39FF14]/30">
+                          {userXPVal} XP
+                        </span>
+                        <button
+                          onClick={() => {
+                            soundFxService.playClick();
+                            setIsQuickMenuOpen(false);
+                          }}
+                          className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer"
+                          title="Close Menu"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-1 max-h-[55vh] overflow-y-auto pr-1 no-scrollbar">
-                      {/* Download App / PWA Install */}
-                      <button
-                        onClick={() => {
-                          setIsQuickMenuOpen(false);
-                          soundFxService.playClick();
-                          setIsDownloadModalOpen(true);
-                        }}
-                        className="w-full flex items-center justify-between p-2 rounded-xl bg-[#39FF14]/15 hover:bg-[#39FF14]/25 border border-[#39FF14]/40 text-[#39FF14] transition-all cursor-pointer text-left shadow-sm"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <Smartphone size={15} className="text-[#39FF14]" />
-                          <span className="text-xs font-bold text-white">Download Mobile App</span>
-                        </div>
-                        <span className="text-[9px] font-mono text-[#39FF14] bg-[#39FF14]/20 px-1.5 py-0.2 rounded font-bold">INSTALL</span>
-                      </button>
-
                       {/* XP Store */}
                       <button
                         onClick={() => {

@@ -16,7 +16,9 @@ import { db, auth } from './firebase';
 import { LiveClass, LiveAttendance, LiveChatMessage, LiveReminder } from '../types/live';
 
 class LiveService {
-  private classesColl = 'liveClasses';
+  private primaryColl = 'live_classes';
+  private fallbackColl = 'liveClasses';
+  private classesColl = 'live_classes';
   private attendanceColl = 'liveAttendance';
   private chatColl = 'liveChat';
   private remindersColl = 'liveReminders';
@@ -121,46 +123,140 @@ class LiveService {
   }
 
   /**
+   * Helper to normalize a LiveClass document from Firestore regardless of exact field casing or schema differences.
+   */
+  private normalizeLiveClass(docId: string, data: any): LiveClass {
+    const classId = data.classId || data.id || docId;
+    const courseId = data.courseId || data.course_id || 'course-web-dev';
+    const title = data.title || data.name || 'Interactive Live Lecture';
+    const instructor = data.instructor || data.teacher || data.instructorName || 'Engr. Jamil Ahmed';
+    const instructorPhoto = data.instructorPhoto || data.instructor_photo || data.teacherPhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80';
+    const subject = data.subject || data.topic || data.category || 'Engineering Core';
+    const description = data.description || data.agenda || data.summary || 'Live interactive session and Q&A workspace.';
+    const requirements = Array.isArray(data.requirements) 
+      ? data.requirements 
+      : typeof data.requirements === 'string' 
+        ? data.requirements.split(',').map((r: string) => r.trim()).filter(Boolean)
+        : ['Active Enrollment'];
+    
+    // Parse startTime & endTime with fallbacks
+    let startTime = data.startTime || data.date || data.start_time;
+    if (!startTime && data.date && data.time) {
+      startTime = `${data.date}T${data.time}`;
+    }
+    if (!startTime) {
+      startTime = new Date().toISOString();
+    } else {
+      try {
+        startTime = new Date(startTime).toISOString();
+      } catch (e) {
+        startTime = new Date().toISOString();
+      }
+    }
+
+    const duration = Number(data.duration) || 60;
+    let endTime = data.endTime || data.end_time;
+    if (!endTime) {
+      endTime = new Date(new Date(startTime).getTime() + duration * 60 * 1000).toISOString();
+    }
+
+    // Status normalization
+    let rawStatus = (data.status || 'upcoming').toLowerCase();
+    let status: 'upcoming' | 'live' | 'completed' = 'upcoming';
+    if (rawStatus === 'live' || rawStatus === 'ongoing' || rawStatus === 'active') {
+      status = 'live';
+    } else if (rawStatus === 'completed' || rawStatus === 'finished' || rawStatus === 'ended' || rawStatus === 'cancelled') {
+      status = 'completed';
+    } else {
+      status = 'upcoming';
+    }
+
+    const streamUrl = data.streamUrl || data.meetLink || data.meet_link || data.videoUrl || data.url || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+    const recordingUrl = data.recordingUrl || data.recording_url || undefined;
+    const notesUrl = data.notesUrl || data.notes_url || data.pdfUrl || undefined;
+    const thumbnail = data.thumbnail || 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&auto=format&fit=crop&q=80';
+    const banner = data.banner || 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1200&auto=format&fit=crop&q=80';
+    const createdAt = data.createdAt ? (typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate().toISOString() : data.createdAt) : new Date().toISOString();
+
+    return {
+      classId,
+      courseId,
+      title,
+      instructor,
+      instructorPhoto,
+      subject,
+      description,
+      requirements,
+      startTime,
+      endTime,
+      duration,
+      status,
+      thumbnail,
+      banner,
+      streamUrl,
+      recordingUrl,
+      notesUrl,
+      createdAt
+    };
+  }
+
+  /**
    * Seed dynamic classes in Firestore database if not present.
    */
   async ensureSeededClasses(courseId: string = 'course-web-dev'): Promise<LiveClass[]> {
     try {
-      const q = query(collection(db, this.classesColl));
+      const q = query(collection(db, this.primaryColl));
       let snapshot;
       try {
         snapshot = await getDocs(q);
       } catch (readErr) {
-        console.warn('Could not read live classes from Firestore, fallback to mock data:', readErr);
-        return this.generateDynamicMockClasses(courseId);
+        console.warn('Could not read live classes from primary collection, checking fallback:', readErr);
+        try {
+          snapshot = await getDocs(query(collection(db, this.fallbackColl)));
+        } catch (e2) {
+          return this.generateDynamicMockClasses(courseId);
+        }
       }
 
-      const list: LiveClass[] = [];
-      snapshot.forEach(doc => {
-        list.push(doc.data() as LiveClass);
-      });
+      const map = new Map<string, LiveClass>();
+      if (snapshot && !snapshot.empty) {
+        snapshot.forEach(doc => {
+          const normalized = this.normalizeLiveClass(doc.id, doc.data());
+          map.set(normalized.classId, normalized);
+        });
+      }
 
-      // If database is completely empty, seed default initial mock classes
-      if (list.length === 0 && auth.currentUser) {
+      // Also check fallback collection if primary has no documents
+      if (map.size === 0) {
+        try {
+          const fallbackSnap = await getDocs(query(collection(db, this.fallbackColl)));
+          fallbackSnap.forEach(doc => {
+            const normalized = this.normalizeLiveClass(doc.id, doc.data());
+            map.set(normalized.classId, normalized);
+          });
+        } catch (e) {}
+      }
+
+      // If database is completely empty, seed default initial mock classes into live_classes
+      if (map.size === 0 && auth.currentUser) {
         try {
           const freshMocks = this.generateDynamicMockClasses(courseId);
           for (const item of freshMocks) {
-            const ref = doc(db, this.classesColl, item.classId);
+            const ref = doc(db, this.primaryColl, item.classId);
             await setDoc(ref, item, { merge: true });
+            map.set(item.classId, item);
           }
-
-          const finalSnapshot = await getDocs(q);
-          const finalList: LiveClass[] = [];
-          finalSnapshot.forEach(doc => {
-            finalList.push(doc.data() as LiveClass);
-          });
-          return finalList.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
         } catch (writeErr) {
           console.warn('Bypassing Firestore write during initial seeding:', writeErr);
         }
       }
 
-      if (list.length > 0) {
-        return list.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      if (map.size > 0) {
+        return Array.from(map.values()).sort((a, b) => {
+          if (a.status === 'live' && b.status !== 'live') return -1;
+          if (b.status === 'live' && a.status !== 'live') return 1;
+          return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+        });
       }
       return this.generateDynamicMockClasses(courseId);
     } catch (err) {
@@ -170,28 +266,93 @@ class LiveService {
   }
 
   /**
-   * Listen to real-time live class list changes.
+   * Listen to real-time live class list changes with fallback resilience.
    */
   listenToLiveClasses(callback: (classes: LiveClass[]) => void) {
-    const q = query(collection(db, this.classesColl));
-    return onSnapshot(q, (snapshot) => {
-      const list: LiveClass[] = [];
-      snapshot.forEach((doc) => {
-        list.push(doc.data() as LiveClass);
+    const classMap = new Map<string, LiveClass>();
+
+    const emitSorted = () => {
+      const list = Array.from(classMap.values());
+      list.sort((a, b) => {
+        // Priority 1: LIVE NOW classes at top
+        if (a.status === 'live' && b.status !== 'live') return -1;
+        if (b.status === 'live' && a.status !== 'live') return 1;
+        // Priority 2: Upcoming chronologically
+        if (a.status === 'upcoming' && b.status === 'completed') return -1;
+        if (b.status === 'upcoming' && a.status === 'completed') return 1;
+        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
       });
-      callback(list.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
-    }, (err) => {
-      console.warn('Silent live classes onSnapshot warning:', err);
-    });
+      callback(list);
+    };
+
+    // Primary listener: live_classes
+    let unsubscribePrimary: (() => void) | null = null;
+    let unsubscribeFallback: (() => void) | null = null;
+
+    try {
+      const qPrimary = query(collection(db, this.primaryColl));
+      unsubscribePrimary = onSnapshot(qPrimary, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const docId = change.doc.id;
+          if (change.type === 'removed') {
+            classMap.delete(docId);
+          } else {
+            const normalized = this.normalizeLiveClass(docId, change.doc.data());
+            classMap.set(normalized.classId, normalized);
+          }
+        });
+        emitSorted();
+      }, (err) => {
+        console.warn('Silent live_classes onSnapshot warning:', err);
+      });
+    } catch (e) {
+      console.warn('Error initiating live_classes snapshot:', e);
+    }
+
+    // Fallback listener: liveClasses
+    try {
+      const qFallback = query(collection(db, this.fallbackColl));
+      unsubscribeFallback = onSnapshot(qFallback, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const docId = change.doc.id;
+          if (change.type === 'removed') {
+            if (!classMap.has(docId)) return;
+          } else {
+            const normalized = this.normalizeLiveClass(docId, change.doc.data());
+            // Only set if not already present or newer
+            classMap.set(normalized.classId, normalized);
+          }
+        });
+        emitSorted();
+      }, (err) => {
+        console.warn('Silent liveClasses onSnapshot warning:', err);
+      });
+    } catch (e) {}
+
+    return () => {
+      if (unsubscribePrimary) unsubscribePrimary();
+      if (unsubscribeFallback) unsubscribeFallback();
+    };
   }
 
   /**
-   * Save / Publish / Update a Live Class in Firestore
+   * Save / Publish / Update a Live Class in Firestore (Dual writes to live_classes and liveClasses)
    */
   async saveLiveClass(liveClass: LiveClass): Promise<void> {
     try {
-      const ref = doc(db, this.classesColl, liveClass.classId);
-      await setDoc(ref, liveClass, { merge: true });
+      const refPrimary = doc(db, this.primaryColl, liveClass.classId);
+      await setDoc(refPrimary, {
+        ...liveClass,
+        meetLink: liveClass.streamUrl,
+        date: liveClass.startTime.split('T')[0] || '',
+        time: liveClass.startTime.split('T')[1]?.slice(0, 5) || ''
+      }, { merge: true });
+
+      try {
+        const refFallback = doc(db, this.fallbackColl, liveClass.classId);
+        await setDoc(refFallback, liveClass, { merge: true });
+      } catch (e) {}
+
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('nexus_live_class_updated', { detail: liveClass }));
       }
@@ -202,12 +363,20 @@ class LiveService {
   }
 
   /**
-   * Delete a Live Class from Firestore
+   * Delete a Live Class from Firestore (Deletes from both collections)
    */
   async deleteLiveClass(classId: string): Promise<void> {
     try {
-      const ref = doc(db, this.classesColl, classId);
-      await deleteDoc(ref);
+      try {
+        const refPrimary = doc(db, this.primaryColl, classId);
+        await deleteDoc(refPrimary);
+      } catch (e) {}
+
+      try {
+        const refFallback = doc(db, this.fallbackColl, classId);
+        await deleteDoc(refFallback);
+      } catch (e) {}
+
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('nexus_live_class_updated', { detail: { classId, deleted: true } }));
       }

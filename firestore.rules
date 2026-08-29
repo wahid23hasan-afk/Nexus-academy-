@@ -381,6 +381,24 @@ service cloud.firestore {
       }
     }
 
+    // Live Study Rooms, Realtime Synced Timer, Tasks, and Multi-user Chat
+    match /study_rooms/{roomId} {
+      allow read, get, list: if true;
+      allow create, update: if true;
+      allow delete: if isSignedIn();
+
+      match /messages/{messageId} {
+        allow read, get, list: if true;
+        allow create, update: if true;
+        allow delete: if isSignedIn();
+      }
+
+      match /tasks/{taskId} {
+        allow read, get, list: if true;
+        allow create, update, delete: if true;
+      }
+    }
+
     // Support Tickets collection rules (Student & Admin Quick Support)
     match /support_tickets/{ticketId} {
       allow read, list, get: if isSignedIn() && (

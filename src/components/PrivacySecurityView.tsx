@@ -1,12 +1,37 @@
-import React from 'react';
-import { ChevronLeft, Shield, Key, Eye, Lock, Smartphone, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, Shield, Key, Eye, Lock, Smartphone, AlertTriangle, Bell, Check } from 'lucide-react';
 import { motion } from 'motion/react';
+import { oneSignalService } from '../services/oneSignalService';
 
 interface PrivacySecurityViewProps {
   onBack: () => void;
 }
 
 export const PrivacySecurityView: React.FC<PrivacySecurityViewProps> = ({ onBack }) => {
+  const [pushStatus, setPushStatus] = useState<NotificationPermission>(() => oneSignalService.getPermissionStatus());
+  const [isRequesting, setIsRequesting] = useState<boolean>(false);
+
+  useEffect(() => {
+    setPushStatus(oneSignalService.getPermissionStatus());
+    const unsub = oneSignalService.onPermissionChange((perm) => {
+      setPushStatus(perm);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleTogglePush = async () => {
+    if (pushStatus === 'granted') return;
+    setIsRequesting(true);
+    try {
+      const res = await oneSignalService.requestPushPermission();
+      setPushStatus(res.status);
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      setIsRequesting(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col pt-2 pb-24 space-y-6">
       {/* Header */}
@@ -27,6 +52,54 @@ export const PrivacySecurityView: React.FC<PrivacySecurityViewProps> = ({ onBack
         animate={{ opacity: 1, y: 0 }}
         className="space-y-4"
       >
+        {/* Push Notification Integration */}
+        <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-3 bg-gradient-to-b from-[#39FF14]/5 to-transparent">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-200 flex items-center">
+              <Bell size={16} className="mr-2 text-[#39FF14]" />
+              Push Notifications (OneSignal)
+            </h3>
+            <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded uppercase ${
+              pushStatus === 'granted'
+                ? 'bg-[#39FF14]/20 text-[#39FF14] border border-[#39FF14]/40'
+                : pushStatus === 'denied'
+                ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+            }`}>
+              {pushStatus === 'granted' ? 'Active' : pushStatus === 'denied' ? 'Blocked' : 'Default'}
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Receive direct push alerts on your desktop & mobile browser when live classes commence or instructors publish vital course bulletins.
+          </p>
+
+          <div className="pt-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-300">Device Push Alert Status</span>
+            <button
+              onClick={handleTogglePush}
+              disabled={isRequesting || pushStatus === 'granted'}
+              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold uppercase transition-all cursor-pointer flex items-center space-x-1.5 ${
+                pushStatus === 'granted'
+                  ? 'bg-[#39FF14]/20 text-[#39FF14] border border-[#39FF14]/30 cursor-default'
+                  : 'bg-[#39FF14] hover:bg-[#32e010] text-black shadow-[0_0_10px_rgba(57,255,20,0.3)]'
+              }`}
+            >
+              {pushStatus === 'granted' ? (
+                <>
+                  <Check size={13} />
+                  <span>Granted & Active</span>
+                </>
+              ) : (
+                <>
+                  <Bell size={13} />
+                  <span>{isRequesting ? 'Requesting...' : 'Enable Push Notifications'}</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
         <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4">
           <h3 className="text-sm font-bold text-slate-300 flex items-center">
             <Lock size={16} className="mr-2 text-blue-400" />

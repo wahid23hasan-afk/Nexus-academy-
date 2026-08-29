@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { Notification, NotificationCategory, NotificationType, NotificationSetting } from '../types/notification';
 import { notificationService, getSafeTimestamp } from '../services/notificationService';
+import { oneSignalService } from '../services/oneSignalService';
 import { auth } from '../services/firebase';
 import { EliteLoading } from './EliteLoading';
 
@@ -62,6 +63,36 @@ export function NotificationCenter({
   const [settings, setSettings] = useState<NotificationSetting | null>(null);
   const [loading, setLoading] = useState<boolean>(!notificationsProp);
   const [expandedNotifId, setExpandedNotifId] = useState<string | null>(null);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(() => oneSignalService.getPermissionStatus());
+  const [isRequestingPush, setIsRequestingPush] = useState<boolean>(false);
+
+  // Keep push permission in sync with events
+  useEffect(() => {
+    setPushPermission(oneSignalService.getPermissionStatus());
+    const unsub = oneSignalService.onPermissionChange((status) => {
+      setPushPermission(status);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleRequestPush = async () => {
+    setIsRequestingPush(true);
+    try {
+      const result = await oneSignalService.requestPushPermission();
+      setPushPermission(result.status);
+      if (result.success || result.status === 'granted') {
+        onShowNotification('Push Notifications Enabled! You will receive live alerts.', 'success');
+      } else if (result.status === 'denied') {
+        onShowNotification('Notifications are blocked by browser. Please enable permissions in browser settings.', 'error');
+      } else {
+        onShowNotification('Notification permission prompt dismissed.', 'info' as any);
+      }
+    } catch (e) {
+      onShowNotification('Error requesting push permission.', 'error');
+    } finally {
+      setIsRequestingPush(false);
+    }
+  };
 
   // Sync with prop when provided
   useEffect(() => {
@@ -489,6 +520,28 @@ export function NotificationCenter({
 
               {/* List Notifications */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-[#050912] scrollbar-thin">
+                {/* OneSignal Web/Mobile Push Activation Banner (if not granted) */}
+                {pushPermission !== 'granted' && (
+                  <div className="p-2.5 rounded-xl bg-gradient-to-r from-[#39FF14]/10 via-emerald-500/5 to-transparent border border-[#39FF14]/30 flex items-center justify-between space-x-2">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <div className="p-1.5 rounded-lg bg-[#39FF14]/20 text-[#39FF14] shrink-0">
+                        <Bell size={13} className="animate-bounce" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-bold text-white leading-tight font-sans">Enable Live Push Alerts</p>
+                        <p className="text-[7.5px] text-slate-300 truncate">Receive instant alerts for live classes and updates.</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleRequestPush}
+                      disabled={isRequestingPush}
+                      className="px-2.5 py-1 rounded-lg bg-[#39FF14] hover:bg-[#32e010] text-black text-[8.5px] font-mono font-bold uppercase transition-all shadow-[0_0_10px_rgba(57,255,20,0.3)] shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                      {isRequestingPush ? 'Enabling...' : 'Enable'}
+                    </button>
+                  </div>
+                )}
+
                 {loading ? (
                   <EliteLoading variant="card" compact label="SCANNING INBOX SIGNALS" subLabel="FETCHING REALTIME NOTIFICATIONS..." />
                 ) : filteredNotifications.length === 0 ? (
@@ -615,6 +668,58 @@ export function NotificationCenter({
           ) : (
             /* PREFERENCES & FCM SIMULATOR WORKSPACE */
             <div className="flex-1 overflow-y-auto p-4 space-y-5 bg-[#050912] scrollbar-thin">
+              {/* OneSignal Web/Mobile Push Card */}
+              <div className="space-y-2.5 bg-gradient-to-b from-[#39FF14]/10 to-transparent p-3.5 rounded-xl border border-[#39FF14]/30">
+                <div className="flex items-center justify-between pb-1 border-b border-white/10">
+                  <div className="flex items-center space-x-2">
+                    <Bell size={13} className="text-[#39FF14]" />
+                    <h3 className="text-[10px] font-mono font-bold tracking-wider text-white uppercase">
+                      OneSignal Push Alerts
+                    </h3>
+                  </div>
+                  <span className={`text-[8px] font-mono font-bold px-2 py-0.5 rounded uppercase ${
+                    pushPermission === 'granted'
+                      ? 'bg-[#39FF14]/20 text-[#39FF14] border border-[#39FF14]/40'
+                      : pushPermission === 'denied'
+                      ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  }`}>
+                    {pushPermission === 'granted' ? 'Active & Enabled' : pushPermission === 'denied' ? 'Blocked by Browser' : 'Not Configured'}
+                  </span>
+                </div>
+
+                <p className="text-[8px] text-slate-300 leading-normal font-sans">
+                  Receive instant system notifications directly on your mobile/desktop even when the browser or app tab is in background when instructors go live or send urgent announcements.
+                </p>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[9px] font-medium text-slate-200">
+                    {pushPermission === 'granted' ? 'Live alerts are connected' : 'Push alerts permission'}
+                  </span>
+                  <button
+                    onClick={handleRequestPush}
+                    disabled={isRequestingPush || pushPermission === 'granted'}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-mono font-bold uppercase transition-all cursor-pointer flex items-center space-x-1.5 ${
+                      pushPermission === 'granted'
+                        ? 'bg-[#39FF14]/20 text-[#39FF14] cursor-default'
+                        : 'bg-[#39FF14] hover:bg-[#32e010] text-black shadow-[0_0_10px_rgba(57,255,20,0.3)]'
+                    }`}
+                  >
+                    {pushPermission === 'granted' ? (
+                      <>
+                        <Check size={11} />
+                        <span>Enabled</span>
+                      </>
+                    ) : (
+                      <>
+                        <Bell size={11} />
+                        <span>{isRequestingPush ? 'Requesting...' : 'Enable Push Notifications'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
               {/* Preferences list */}
               <div className="space-y-3">
                 <div className="flex items-center space-x-2 pb-1 border-b border-white/10">

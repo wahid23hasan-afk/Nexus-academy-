@@ -65,6 +65,10 @@ export function ProfileView({
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState<boolean>(false);
   const [myPayoutRequests, setMyPayoutRequests] = useState<any[]>([]);
 
+  // Compact Section Modals (Top Aligned)
+  const [isMilestonesModalOpen, setIsMilestonesModalOpen] = useState<boolean>(false);
+  const [isBadgesModalOpen, setIsBadgesModalOpen] = useState<boolean>(false);
+
   // Bug #1: Check if user's email matches an approved instructor in Firestore
   const [isApprovedInstructor, setIsApprovedInstructor] = useState<boolean>(false);
 
@@ -552,171 +556,99 @@ export function ProfileView({
         </div>
       </div>
 
-      {/* INSTRUCTOR EARNINGS & PAYOUT CARD - ROLE GUARD: ONLY INSTRUCTOR OR ADMIN */}
+      {/* 1. COMPACT INSTRUCTOR EARNINGS & PAYOUT OPTION */}
       {isInstructorOrAdmin && (
-        <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-950/20 via-slate-900 to-slate-900 relative overflow-hidden space-y-3.5 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
-                <Wallet size={18} />
+        <div 
+          onClick={() => {
+            soundFxService.playClick();
+            setIsPayoutModalOpen(true);
+          }}
+          className="glass-panel p-3.5 sm:p-4 rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-950/20 via-slate-900 to-slate-900 relative overflow-hidden transition-all cursor-pointer hover:border-amber-500/60 hover:bg-amber-950/30 group"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
+                <Wallet size={16} />
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-white tracking-wide">Instructor Earnings & Payout</h3>
-                <p className="text-[10px] font-mono text-amber-400/80">ইন্সট্রাক্টর আয় ও উত্তোলন ড্যাশবোর্ড</p>
+              <div className="min-w-0">
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-xs sm:text-sm font-bold text-white truncate">Instructor Earnings & Payout</h3>
+                  <span className="hidden sm:inline-block px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[9px] font-mono font-bold">
+                    Verified
+                  </span>
+                </div>
+                <p className="text-[10px] font-mono text-amber-400/90 truncate">
+                  Available: <span className="text-emerald-400 font-bold">৳{currentAvailableBalance.toLocaleString()}</span> • Total: ৳45,500
+                </p>
               </div>
             </div>
-            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider">
-              🎓 Verified Instructor
-            </span>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                soundFxService.playClick();
+                setIsPayoutModalOpen(true);
+              }}
+              className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-bold text-xs rounded-lg transition-all cursor-pointer shadow-[0_0_12px_rgba(245,158,11,0.3)] flex items-center space-x-1 shrink-0"
+            >
+              <CreditCard size={13} />
+              <span>Payout</span>
+              <ChevronRight size={13} />
+            </button>
           </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="bg-slate-900/80 p-3 rounded-xl border border-white/5">
-              <span className="text-[10px] font-mono text-slate-400 uppercase block">Total Course Revenue</span>
-              <span className="text-base sm:text-lg font-bold font-mono text-emerald-400">৳ 45,500</span>
-            </div>
-            <div className="bg-slate-900/80 p-3 rounded-xl border border-white/5">
-              <span className="text-[10px] font-mono text-slate-400 uppercase block">Available Balance</span>
-              <span className="text-base sm:text-lg font-bold font-mono text-amber-400">৳ {currentAvailableBalance.toLocaleString()}</span>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setIsPayoutModalOpen(true)}
-            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-black font-mono font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-[0_0_15px_rgba(245,158,11,0.3)] flex items-center justify-center space-x-2 hover:scale-[1.01] active:scale-[0.99]"
-          >
-            <CreditCard size={15} />
-            <span>Request Payout / টাকা তোলার আবেদন</span>
-          </button>
-
-          {/* Recent Payout Requests History */}
-          {myPayoutRequests.length > 0 && (
-            <div className="pt-2 border-t border-white/10 space-y-2">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
-                Recent Withdrawal Requests:
-              </span>
-              <div className="space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar">
-                {myPayoutRequests.map((req) => (
-                  <div
-                    key={req.id}
-                    className="flex items-center justify-between p-2 rounded-lg bg-black/40 border border-white/5 text-xs font-mono"
-                  >
-                    <div>
-                      <span className="text-white font-bold">৳{req.amount}</span>
-                      <span className="text-slate-400 ml-1.5">({req.paymentMethod})</span>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
-                      req.status === 'approved'
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : req.status === 'rejected'
-                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
-                    }`}>
-                      {req.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {/* 3. EQUIPPED BADGES & AVATAR FRAMES (XP BAZAAR WARDROBE) */}
-      <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-white/5 space-y-3.5 relative overflow-hidden">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+      {/* 2. COMPACT MY BADGES & AVATAR FRAMES OPTION */}
+      <div 
+        onClick={() => {
+          soundFxService.playClick();
+          setIsBadgesModalOpen(true);
+        }}
+        className="glass-panel p-3.5 sm:p-4 rounded-xl border border-white/5 hover:border-amber-500/30 relative overflow-hidden transition-all cursor-pointer hover:bg-white/[0.02] group"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center space-x-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
               <Award size={16} />
             </div>
-            <div>
-              <h3 className="text-xs sm:text-sm font-bold text-white tracking-wide">
-                My Badges & Avatar Frames
-              </h3>
-              <p className="text-[10px] text-slate-400 font-mono">
-                Select any unlocked XP Store badge to display on your profile & avatar
+            <div className="min-w-0">
+              <div className="flex items-center space-x-2">
+                <h3 className="text-xs sm:text-sm font-bold text-white truncate">My Badges & Avatar Frames</h3>
+                {ownedStoreItems.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-mono font-bold">
+                    {ownedStoreItems.length} Owned
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 font-mono truncate">
+                {activeTitle ? `Equipped Title: ${activeTitle}` : 'Select & equip unlocked badges & glowing frames'}
               </p>
             </div>
           </div>
 
-          <button
-            onClick={onOpenRewards}
-            className="px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 rounded-lg text-[11px] font-mono font-bold flex items-center space-x-1 transition-all cursor-pointer shrink-0"
-          >
-            <ShoppingBag size={12} className="mr-1" />
-            <span>XP Store</span>
-          </button>
-        </div>
-
-        {ownedStoreItems.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-            {ownedStoreItems.map((item) => {
-              const isEquippedFrame = activeFrame === item.id;
-              const isEquippedTitle = activeTitle === item.name;
-              const isEquipped = isEquippedFrame || isEquippedTitle;
-
-              return (
-                <div
-                  key={item.id}
-                  onClick={() => handleToggleEquipItem(item)}
-                  className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
-                    isEquipped
-                      ? 'bg-amber-500/15 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
-                      : 'bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2.5 min-w-0">
-                    <span className="text-xl shrink-0">{item.icon}</span>
-                    <div className="min-w-0">
-                      <div className="flex items-center space-x-1.5">
-                        <span className="text-xs font-bold text-white truncate block">
-                          {item.name}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono truncate block">
-                        {item.perkGranted || item.description}
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleEquipItem(item);
-                    }}
-                    className={`ml-2 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold shrink-0 transition-all ${
-                      isEquipped
-                        ? 'bg-amber-400 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
-                        : 'bg-white/10 text-slate-300 hover:bg-white/20 border border-white/10'
-                    }`}
-                  >
-                    {isEquipped ? 'EQUIPPED' : 'EQUIP'}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="p-4 rounded-xl bg-white/[0.02] border border-dashed border-white/10 text-center space-y-2">
-            <div className="text-2xl">✨</div>
-            <p className="text-xs text-slate-300 font-medium">No Badges or Frames Owned Yet</p>
-            <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
-              Use your earned XP to buy glowing avatar frames, titles, and VIP passes in the XP Marketplace!
-            </p>
+          <div className="flex items-center space-x-1.5 shrink-0">
             <button
-              onClick={onOpenRewards}
-              className="mt-1 px-3 py-1.5 bg-[#39FF14]/15 hover:bg-[#39FF14]/25 border border-[#39FF14]/30 text-[#39FF14] rounded-lg text-xs font-mono font-bold inline-flex items-center space-x-1.5 transition-all cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                soundFxService.playClick();
+                setIsBadgesModalOpen(true);
+              }}
+              className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-lg text-xs font-mono font-bold flex items-center space-x-1 transition-all cursor-pointer"
             >
-              <Zap size={12} />
-              <span>Explore XP Marketplace</span>
+              <span>View Badges</span>
+              <ChevronRight size={13} />
             </button>
           </div>
-        )}
+        </div>
       </div>
 
       {/* 3. COMPACT PAYMENT & ACCESS STATUS ALERT */}
       <div 
-        onClick={() => onNavigate('payment-history')}
+        onClick={() => {
+          soundFxService.playClick();
+          onNavigate('payment-history');
+        }}
         className={`p-3 rounded-xl border transition-all relative overflow-hidden cursor-pointer group hover:border-white/20 ${
           approvalStatus === 'Rejected'
             ? 'bg-gradient-to-r from-red-950/50 via-slate-900/80 to-slate-950/90 border-red-500/35 hover:border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)]'
@@ -754,6 +686,7 @@ export function ProfileView({
           <button
             onClick={(e) => {
               e.stopPropagation();
+              soundFxService.playClick();
               onNavigate('payment-history');
             }}
             className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold flex items-center space-x-1 border shrink-0 transition-all cursor-pointer ${
@@ -773,7 +706,10 @@ export function ProfileView({
       {/* 4. COMPACT PAYMENTS & ENROLLMENTS SECTION */}
       <div className="glass-panel rounded-xl border border-white/5 overflow-hidden">
         <button
-          onClick={() => onNavigate('payment-history')}
+          onClick={() => {
+            soundFxService.playClick();
+            onNavigate('payment-history');
+          }}
           className="w-full p-3 sm:p-3.5 flex items-center justify-between hover:bg-white/5 transition-colors group cursor-pointer"
         >
           <div className="flex items-center space-x-3">
@@ -803,18 +739,45 @@ export function ProfileView({
         </button>
       </div>
 
-      {/* 5. LEARNING MILESTONES (ACHIEVEMENT TRACKER) IN PROFILE */}
-      <section className="relative">
-        <AchievementTracker
-          userProfile={userProfile}
-          courses={courses}
-          enrolledCourseIds={enrolledCourseIds}
-          userCourseProgressMap={userCourseProgressMap}
-          userLessonProgressMap={userLessonProgressMap}
-          onShowNotification={onShowNotification}
-          onOpenCourse={onOpenCourse}
-        />
-      </section>
+      {/* 5. COMPACT LEARNING MILESTONES OPTION */}
+      <div 
+        onClick={() => {
+          soundFxService.playClick();
+          setIsMilestonesModalOpen(true);
+        }}
+        className="glass-panel p-3.5 sm:p-4 rounded-xl border border-[#39FF14]/20 bg-[#39FF14]/5 hover:border-[#39FF14]/40 hover:bg-[#39FF14]/10 relative overflow-hidden transition-all cursor-pointer group"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center space-x-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-[#39FF14]/15 border border-[#39FF14]/30 flex items-center justify-center text-[#39FF14] shrink-0 group-hover:scale-105 transition-transform">
+              <Trophy size={16} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center space-x-2">
+                <h3 className="text-xs sm:text-sm font-bold text-white truncate">Learning Milestones</h3>
+                <span className="px-2 py-0.5 bg-[#39FF14]/20 text-[#39FF14] border border-[#39FF14]/40 rounded-full text-[9px] font-mono font-bold">
+                  5/8 Unlocked
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-mono truncate">
+                63% Completed • Track milestones & earn XP badges
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              soundFxService.playClick();
+              setIsMilestonesModalOpen(true);
+            }}
+            className="px-3 py-1.5 bg-[#39FF14]/20 hover:bg-[#39FF14]/30 border border-[#39FF14]/40 text-[#39FF14] rounded-lg text-xs font-mono font-bold flex items-center space-x-1 shrink-0 transition-all cursor-pointer shadow-[0_0_10px_rgba(57,255,20,0.15)]"
+          >
+            <span>View All</span>
+            <ChevronRight size={13} />
+          </button>
+        </div>
+      </div>
 
       {/* 6. PROFILE SECTIONS (CONTENT, COMMUNITY, SETTINGS) */}
       <div className="space-y-3">
@@ -976,66 +939,233 @@ export function ProfileView({
         </div>
       </div>
 
-      {/* LANGUAGE SELECTION MODAL */}
-      <AnimatePresence>
-        {isLanguageModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-sm bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl space-y-4"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <h3 className="text-sm font-mono font-bold text-white uppercase tracking-wider flex items-center space-x-2">
-                  <Globe size={16} className="text-cyan-400" />
-                  <span>Select App Language / ভাষা</span>
-                </h3>
-                <button onClick={() => setIsLanguageModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="space-y-2 pt-2">
-                <button
-                  onClick={() => handleSelectLanguage('en')}
-                  className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
-                    selectedLanguage === 'en'
-                      ? 'bg-cyan-500/20 border-cyan-500/50 text-white font-bold'
-                      : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <span className="text-2xl">🇺🇸</span>
-                    <span className="font-mono text-sm">ENGLISH (EN)</span>
+      {/* LEARNING MILESTONES MODAL (TOP-ALIGNED) */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isMilestonesModalOpen && (
+            <div className="fixed inset-0 z-[99999] flex items-start justify-center p-3 sm:p-6 pt-4 sm:pt-10 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                className="w-full max-w-2xl bg-[#0a0f1d] border border-[#39FF14]/30 rounded-2xl p-4 sm:p-6 shadow-[0_0_35px_rgba(0,0,0,0.9)] space-y-4 relative my-auto max-h-[90vh] overflow-y-auto custom-scrollbar"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-lg bg-[#39FF14]/15 border border-[#39FF14]/30 flex items-center justify-center text-[#39FF14]">
+                      <Trophy size={18} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-white tracking-wide">
+                        Learning Milestones & Achievements
+                      </h3>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        Complete learning tasks & unlock exclusive badges
+                      </p>
+                    </div>
                   </div>
-                  {selectedLanguage === 'en' && <Check size={16} className="text-cyan-400" />}
-                </button>
+                  <button
+                    onClick={() => setIsMilestonesModalOpen(false)}
+                    className="p-1.5 hover:bg-white/10 rounded-xl text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
 
-                <button
-                  onClick={() => handleSelectLanguage('bn')}
-                  className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
-                    selectedLanguage === 'bn'
-                      ? 'bg-cyan-500/20 border-cyan-500/50 text-white font-bold'
-                      : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <span className="text-2xl">🇧🇩</span>
-                    <span className="font-mono text-sm">বাংলা (BN)</span>
+                <AchievementTracker
+                  userProfile={userProfile}
+                  courses={courses}
+                  enrolledCourseIds={enrolledCourseIds}
+                  userCourseProgressMap={userCourseProgressMap}
+                  userLessonProgressMap={userLessonProgressMap}
+                  onShowNotification={onShowNotification}
+                  onOpenCourse={(id) => {
+                    setIsMilestonesModalOpen(false);
+                    onOpenCourse(id);
+                  }}
+                />
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+
+      {/* MY BADGES & AVATAR FRAMES MODAL (TOP-ALIGNED) */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isBadgesModalOpen && (
+            <div className="fixed inset-0 z-[99999] flex items-start justify-center p-3 sm:p-6 pt-4 sm:pt-10 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                className="w-full max-w-xl bg-[#0a0f1d] border border-amber-500/30 rounded-2xl p-4 sm:p-6 shadow-[0_0_35px_rgba(0,0,0,0.9)] space-y-4 relative my-auto max-h-[90vh] overflow-y-auto custom-scrollbar"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                      <Award size={18} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-white tracking-wide">
+                        My Badges & Avatar Frames
+                      </h3>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        Equip earned items to display on your profile & avatar
+                      </p>
+                    </div>
                   </div>
-                  {selectedLanguage === 'bn' && <Check size={16} className="text-cyan-400" />}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => {
+                        setIsBadgesModalOpen(false);
+                        onOpenRewards();
+                      }}
+                      className="px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 rounded-lg text-xs font-mono font-bold flex items-center space-x-1 cursor-pointer"
+                    >
+                      <ShoppingBag size={13} className="mr-1" />
+                      <span>XP Store</span>
+                    </button>
+                    <button
+                      onClick={() => setIsBadgesModalOpen(false)}
+                      className="p-1.5 hover:bg-white/10 rounded-xl text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                {ownedStoreItems.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {ownedStoreItems.map((item) => {
+                      const isEquippedFrame = activeFrame === item.id;
+                      const isEquippedTitle = activeTitle === item.name;
+                      const isEquipped = isEquippedFrame || isEquippedTitle;
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => handleToggleEquipItem(item)}
+                          className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                            isEquipped
+                              ? 'bg-amber-500/15 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                              : 'bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2.5 min-w-0">
+                            <span className="text-2xl shrink-0">{item.icon}</span>
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-white truncate block">
+                                {item.name}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono truncate block">
+                                {item.perkGranted || item.description}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleEquipItem(item);
+                            }}
+                            className={`ml-2 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold shrink-0 transition-all ${
+                              isEquipped
+                                ? 'bg-amber-400 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
+                                : 'bg-white/10 text-slate-300 hover:bg-white/20 border border-white/10'
+                            }`}
+                          >
+                            {isEquipped ? 'EQUIPPED' : 'EQUIP'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-6 rounded-xl bg-white/[0.02] border border-dashed border-white/10 text-center space-y-3">
+                    <div className="text-3xl">✨</div>
+                    <p className="text-xs text-slate-300 font-medium">No Badges or Frames Owned Yet</p>
+                    <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
+                      Use your earned XP to buy glowing avatar frames, titles, and VIP passes in the XP Marketplace!
+                    </p>
+                    <button
+                      onClick={() => {
+                        setIsBadgesModalOpen(false);
+                        onOpenRewards();
+                      }}
+                      className="mt-1 px-4 py-2 bg-[#39FF14]/15 hover:bg-[#39FF14]/25 border border-[#39FF14]/30 text-[#39FF14] rounded-lg text-xs font-mono font-bold inline-flex items-center space-x-1.5 transition-all cursor-pointer"
+                    >
+                      <Zap size={14} />
+                      <span>Explore XP Marketplace</span>
+                    </button>
+                  </div>
+                )}
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+
+      {/* LANGUAGE SELECTION MODAL (TOP-ALIGNED) */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isLanguageModalOpen && (
+            <div className="fixed inset-0 z-[99999] flex items-start justify-center p-3 sm:p-6 pt-4 sm:pt-10 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0, y: -10 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: -10 }}
+                className="w-full max-w-sm bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl space-y-4 my-auto max-h-[90vh] overflow-y-auto custom-scrollbar"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                  <h3 className="text-sm font-mono font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                    <Globe size={16} className="text-cyan-400" />
+                    <span>Select App Language / ভাষা</span>
+                  </h3>
+                  <button onClick={() => setIsLanguageModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <button
+                    onClick={() => handleSelectLanguage('en')}
+                    className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
+                      selectedLanguage === 'en'
+                        ? 'bg-cyan-500/20 border-cyan-500/50 text-white font-bold'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <span className="text-2xl">🇺🇸</span>
+                      <span className="font-mono text-sm">ENGLISH (EN)</span>
+                    </div>
+                    {selectedLanguage === 'en' && <Check size={16} className="text-cyan-400" />}
+                  </button>
+
+                  <button
+                    onClick={() => handleSelectLanguage('bn')}
+                    className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
+                      selectedLanguage === 'bn'
+                        ? 'bg-cyan-500/20 border-cyan-500/50 text-white font-bold'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <span className="text-2xl">🇧🇩</span>
+                      <span className="font-mono text-sm">বাংলা (BN)</span>
+                    </div>
+                    {selectedLanguage === 'bn' && <Check size={16} className="text-cyan-400" />}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* INSTRUCTOR PAYOUT WITHDRAWAL MODAL */}
       <InstructorPayoutModal
@@ -1047,15 +1177,15 @@ export function ProfileView({
         onShowNotification={onShowNotification}
       />
 
-      {/* EDIT PROFILE MODAL */}
+      {/* EDIT PROFILE MODAL (TOP-ALIGNED) */}
       {typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
           {isEditModalOpen && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+            <div className="fixed inset-0 z-[9999] flex items-start justify-center p-3 sm:p-6 pt-4 sm:pt-10 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
               <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                exit={{ opacity: 0, scale: 0.95, y: -10 }}
                 className="w-full max-w-md bg-[#0a0f1d] border border-[#39FF14]/30 rounded-2xl p-5 shadow-[0_0_35px_rgba(0,0,0,0.9)] space-y-4 relative my-auto max-h-[90vh] overflow-y-auto custom-scrollbar"
               >
                 <div className="flex justify-between items-center pb-3 border-b border-white/10">

@@ -1293,6 +1293,14 @@
     "/support_tickets/{ticketId}": {
       "schema": "SupportTicket",
       "description": "Student support tickets and inquiries"
+    },
+    "/study_rooms/{roomId}": {
+      "schema": "StudyRoom",
+      "description": "Collaborative live study rooms and timer synchronization"
+    },
+    "/study_rooms/{roomId}/messages/{messageId}": {
+      "schema": "StudyRoomMessage",
+      "description": "Live group study room chat messages with WhatsApp-style replies"
     }
   }
 }

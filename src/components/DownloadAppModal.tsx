@@ -103,8 +103,8 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({ isOpen, onCl
           {/* Modal Header */}
           <div className="flex items-start justify-between border-b border-white/10 pb-4 mb-4 relative z-10">
             <div className="flex items-center space-x-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#39FF14]/20 to-emerald-500/10 border border-[#39FF14]/40 flex items-center justify-center shadow-[0_0_15px_rgba(57,255,20,0.2)]">
-                <Smartphone size={22} className="text-[#39FF14]" />
+              <div className="w-11 h-11 rounded-2xl bg-slate-950 border border-[#39FF14]/40 flex items-center justify-center shadow-[0_0_15px_rgba(57,255,20,0.2)] overflow-hidden">
+                <img src="/icon.svg" alt="Nexus Academy Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               </div>
               <div>
                 <div className="flex items-center space-x-2">
@@ -248,8 +248,8 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({ isOpen, onCl
                   </span>
                   <div className="p-3 bg-slate-900 rounded-xl border border-white/10 flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-[#39FF14] font-bold text-sm">
-                        N
+                      <div className="w-8 h-8 rounded-lg bg-slate-950 border border-[#39FF14]/30 flex items-center justify-center overflow-hidden shrink-0">
+                        <img src="/icon.svg" alt="Nexus Academy Icon" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       </div>
                       <div>
                         <span className="text-white font-bold text-xs block">Nexus Academy</span>

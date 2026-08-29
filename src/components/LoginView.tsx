@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, Eye, EyeOff, LogIn, ChevronLeft, AlertCircle, CheckCircle, Fingerprint, KeyRound, Send, ArrowLeft, ShieldAlert } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, LogIn, ChevronLeft, AlertCircle, CheckCircle, KeyRound, Send, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { AppView, LoginFormErrors } from '../types/auth';
 import { authService } from '../services/authService';
 import { systemSettingsService, SystemSettings, DEFAULT_SYSTEM_SETTINGS } from '../services/systemSettingsService';
@@ -27,7 +27,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [errors, setErrors] = useState<LoginFormErrors>({});
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [isBiometricSupported, setIsBiometricSupported] = useState<boolean>(true);
 
   // Forgot Password flow state
   const [isForgotMode, setIsForgotMode] = useState<boolean>(false);
@@ -35,91 +34,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState<boolean>(false);
   const [isSendingReset, setIsSendingReset] = useState<boolean>(false);
-
-  useEffect(() => {
-    // Check if device supports Web Authentication API (Face ID / Touch ID / Fingerprint)
-    if (typeof window !== 'undefined' && window.PublicKeyCredential) {
-      if (PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
-        PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-          .then((available) => setIsBiometricSupported(available))
-          .catch(() => setIsBiometricSupported(true));
-      }
-    } else {
-      setIsBiometricSupported(false);
-    }
-  }, []);
-
-  const handleBiometricAuth = async () => {
-    setIsLoading(true);
-    setLoginError(null);
-
-    let biometricVerified = false;
-
-    try {
-      if (typeof window !== 'undefined' && window.PublicKeyCredential && navigator.credentials) {
-        const challenge = new Uint8Array(32);
-        window.crypto.getRandomValues(challenge);
-
-        try {
-          // Attempt biometric authentication via WebAuthn API
-          await navigator.credentials.get({
-            publicKey: {
-              challenge,
-              timeout: 60000,
-              userVerification: 'preferred',
-            },
-          });
-          biometricVerified = true;
-        } catch (authErr: any) {
-          // If no existing passkey was found or prompt cancelled, try challenge registration
-          try {
-            const userHandle = new Uint8Array(16);
-            window.crypto.getRandomValues(userHandle);
-            await navigator.credentials.create({
-              publicKey: {
-                challenge,
-                rp: { name: 'Nexus Academy' },
-                user: {
-                  id: userHandle,
-                  name: email || 'scholar@nexus.edu',
-                  displayName: 'Nexus Scholar',
-                },
-                pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
-                timeout: 60000,
-                authenticatorSelection: { userVerification: 'preferred' },
-              },
-            });
-            biometricVerified = true;
-          } catch (createErr) {
-            console.log('Biometric passkey prompt bypassed or unavailable in preview frame.');
-          }
-        }
-      }
-
-      // Smooth automatic fallback to account authentication
-      const response = await authService.loginWithGoogle();
-      setIsLoading(false);
-
-      if (response.success && response.user) {
-        if (biometricVerified) {
-          onShowNotification(`Biometric Verified! Welcome, ${response.user.displayName || 'Scholar'}`, 'success');
-        } else {
-          onShowNotification(`Signed in with Google! Welcome, ${response.user.displayName || 'Scholar'}`, 'success');
-        }
-      } else if (response.error) {
-        setLoginError(response.error);
-      }
-    } catch (err: any) {
-      setIsLoading(false);
-      // Fallback to Google Auth seamlessly if biometric fails or is cancelled
-      const response = await authService.loginWithGoogle();
-      if (response.success && response.user) {
-        onShowNotification(`Signed in! Welcome, ${response.user.displayName || 'Scholar'}`, 'success');
-      } else {
-        setLoginError('Authentication paused. Please sign in with email & password or Google.');
-      }
-    }
-  };
   
   // Validate fields on submit
   const validateForm = (): boolean => {
@@ -657,8 +571,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
               <div className="flex-grow border-t border-white/5"></div>
             </div>
 
-            {/* Quick Auth Options: Google & Biometric */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Quick Auth Option: Google */}
+            <div>
               {/* Google Sign-In Button */}
               <motion.button
                 id="login-google-btn"
@@ -670,22 +584,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 className="w-full py-3.5 px-4 min-h-[48px] rounded-xl text-xs sm:text-sm font-semibold tracking-wide flex items-center justify-center space-x-2 bg-white/[0.02] hover:bg-white/[0.06] active:bg-white/[0.1] text-[#39FF14] border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
               >
                 <LogIn size={16} className="text-[#39FF14]" />
-                <span className="text-white">Google Login</span>
-              </motion.button>
-
-              {/* Biometric Authentication Button */}
-              <motion.button
-                id="login-biometric-btn"
-                type="button"
-                onClick={handleBiometricAuth}
-                whileHover={{ scale: isLoading ? 1 : 1.01 }}
-                whileTap={{ scale: isLoading ? 1 : 0.98 }}
-                disabled={isLoading}
-                title="Sign in with Fingerprint, Face ID, or Passkey"
-                className="w-full py-3.5 px-4 min-h-[48px] rounded-xl text-xs sm:text-sm font-semibold tracking-wide flex items-center justify-center space-x-2 bg-emerald-950/20 hover:bg-emerald-900/30 active:bg-emerald-900/40 text-emerald-300 border border-emerald-500/30 hover:border-emerald-500/50 transition-all duration-300 cursor-pointer"
-              >
-                <Fingerprint size={18} className="text-[#39FF14] animate-pulse" />
-                <span>Biometric Sign-In</span>
+                <span className="text-white">Instant Access with Google Account</span>
               </motion.button>
             </div>
           </motion.form>

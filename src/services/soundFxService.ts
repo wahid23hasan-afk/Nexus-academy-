@@ -233,6 +233,173 @@ class SoundFXService {
     osc.start(now);
     osc.stop(now + 0.16);
   }
+
+  // --- PROCEDURAL BACKGROUND AMBIENT SOUNDSCAPES ---
+  private ambientGainNode: GainNode | null = null;
+  private ambientSourceNodes: AudioNode[] = [];
+  private ambientInterval: any = null;
+  private currentAmbientType: string = 'none';
+
+  public stopAmbientSound() {
+    if (this.ambientInterval) {
+      clearInterval(this.ambientInterval);
+      this.ambientInterval = null;
+    }
+    if (this.ambientGainNode && this.ctx) {
+      try {
+        this.ambientGainNode.gain.setValueAtTime(this.ambientGainNode.gain.value, this.ctx.currentTime);
+        this.ambientGainNode.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.3);
+      } catch (e) {
+        // ignore
+      }
+    }
+    setTimeout(() => {
+      this.ambientSourceNodes.forEach(node => {
+        try {
+          if ((node as any).stop) (node as any).stop();
+          node.disconnect();
+        } catch (e) {}
+      });
+      this.ambientSourceNodes = [];
+      this.ambientGainNode = null;
+      this.currentAmbientType = 'none';
+    }, 350);
+  }
+
+  public playAmbientSound(type: 'none' | 'rain' | 'lofi' | 'cafe' | 'forest') {
+    this.stopAmbientSound();
+    if (type === 'none') return;
+
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    this.currentAmbientType = type;
+    const masterGain = ctx.createGain();
+    masterGain.gain.setValueAtTime(0.001, ctx.currentTime);
+    masterGain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.5);
+    masterGain.connect(ctx.destination);
+    this.ambientGainNode = masterGain;
+
+    if (type === 'rain') {
+      // Procedural Rain Noise (Pink noise filtered)
+      const bufferSize = 2 * ctx.sampleRate;
+      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+        output[i] *= 0.05;
+        b6 = white * 0.115926;
+      }
+
+      const whiteNoise = ctx.createBufferSource();
+      whiteNoise.buffer = noiseBuffer;
+      whiteNoise.loop = true;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(800, ctx.currentTime);
+
+      whiteNoise.connect(filter);
+      filter.connect(masterGain);
+      whiteNoise.start(0);
+      this.ambientSourceNodes.push(whiteNoise, filter);
+    } else if (type === 'lofi') {
+      // Procedural Warm Lo-Fi Chords progression (Dm7 - G7 - Cmaj7 - Am7)
+      const chords = [
+        [293.66, 349.23, 440.00, 523.25], // Dm7
+        [392.00, 493.88, 587.33, 698.46], // G7
+        [261.63, 329.63, 392.00, 493.88], // Cmaj7
+        [220.00, 261.63, 329.63, 392.00]  // Am7
+      ];
+      let chordIndex = 0;
+
+      const playLofiChord = () => {
+        if (!this.ctx || this.currentAmbientType !== 'lofi') return;
+        const currentChord = chords[chordIndex];
+        chordIndex = (chordIndex + 1) % chords.length;
+        const now = this.ctx.currentTime;
+
+        currentChord.forEach((freq, idx) => {
+          const osc = this.ctx!.createOscillator();
+          const gain = this.ctx!.createGain();
+          const filter = this.ctx!.createBiquadFilter();
+
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.03);
+
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(600, now);
+
+          gain.gain.setValueAtTime(0.0001, now + idx * 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.04, now + idx * 0.03 + 0.3);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.03 + 3.2);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(masterGain);
+
+          osc.start(now + idx * 0.03);
+          osc.stop(now + idx * 0.03 + 3.5);
+        });
+      };
+
+      playLofiChord();
+      this.ambientInterval = setInterval(playLofiChord, 3600);
+    } else if (type === 'cafe') {
+      // Cozy Cafe ambient murmur & gentle low-frequency warmth
+      const bufferSize = 2 * ctx.sampleRate;
+      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = (Math.random() * 2 - 1) * 0.04;
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = noiseBuffer;
+      noise.loop = true;
+
+      const bandpass = ctx.createBiquadFilter();
+      bandpass.type = 'bandpass';
+      bandpass.frequency.setValueAtTime(450, ctx.currentTime);
+      bandpass.Q.setValueAtTime(1.2, ctx.currentTime);
+
+      noise.connect(bandpass);
+      bandpass.connect(masterGain);
+      noise.start(0);
+      this.ambientSourceNodes.push(noise, bandpass);
+    } else if (type === 'forest') {
+      // Forest Stream (Brown noise + gentle water trickles)
+      const bufferSize = 2 * ctx.sampleRate;
+      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      let lastOut = 0.0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        output[i] = (lastOut + (0.02 * white)) / 1.02;
+        lastOut = output[i];
+        output[i] *= 0.25;
+      }
+      const brownNoise = ctx.createBufferSource();
+      brownNoise.buffer = noiseBuffer;
+      brownNoise.loop = true;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(550, ctx.currentTime);
+
+      brownNoise.connect(filter);
+      filter.connect(masterGain);
+      brownNoise.start(0);
+      this.ambientSourceNodes.push(brownNoise, filter);
+    }
+  }
 }
 
 export const soundFxService = new SoundFXService();

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, DollarSign, CreditCard, Send, Building2, Smartphone } from 'lucide-react';
 import { db, auth } from '../services/firebase';
@@ -81,14 +82,14 @@ export function InstructorPayoutModal({
 
   if (!isOpen) return null;
 
-  return (
+  return typeof document !== 'undefined' ? createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+      <div className="fixed inset-0 z-[99999] flex items-start justify-center p-3 sm:p-6 pt-4 sm:pt-10 bg-black/80 backdrop-blur-md overflow-y-auto w-screen h-[100dvh] top-0 left-0">
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          initial={{ opacity: 0, scale: 0.95, y: -10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="w-full max-w-md bg-[#0a0f1d] border border-amber-500/30 rounded-2xl p-6 shadow-[0_0_35px_rgba(0,0,0,0.9)] space-y-5 relative"
+          exit={{ opacity: 0, scale: 0.95, y: -10 }}
+          className="w-full max-w-md bg-[#0a0f1d] border border-amber-500/30 rounded-2xl p-6 shadow-[0_0_35px_rgba(0,0,0,0.9)] space-y-5 relative my-auto max-h-[90vh] overflow-y-auto custom-scrollbar"
         >
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
@@ -203,6 +204,7 @@ export function InstructorPayoutModal({
           </form>
         </motion.div>
       </div>
-    </AnimatePresence>
-  );
+    </AnimatePresence>,
+    document.body
+  ) : null;
 }
