@@ -1,144 +1,163 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <defs>
-    <!-- Dark Metallic Luxury Space Background -->
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0F172A"/>
-      <stop offset="40%" stop-color="#070C18"/>
-      <stop offset="80%" stop-color="#03060E"/>
-      <stop offset="100%" stop-color="#010206"/>
+    <!-- Background Gradient for Squircle Icon Base -->
+    <linearGradient id="nexusBgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#091122"/>
+      <stop offset="35%" stop-color="#050B17"/>
+      <stop offset="75%" stop-color="#03060E"/>
+      <stop offset="100%" stop-color="#020307"/>
     </linearGradient>
 
-    <!-- Ultra High-Quality Cyber Neon Green-Cyan Gradient -->
-    <linearGradient id="neonMain" x1="0%" y1="0%" x2="100%" y2="100%">
+    <!-- Vibrant Neon Green & Cyan Gradient for Monogram N -->
+    <linearGradient id="nexusNeonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#73FF00"/>
-      <stop offset="30%" stop-color="#39FF14"/>
-      <stop offset="70%" stop-color="#00FF99"/>
+      <stop offset="25%" stop-color="#39FF14"/>
+      <stop offset="65%" stop-color="#00FFB2"/>
       <stop offset="100%" stop-color="#00E5FF"/>
     </linearGradient>
 
-    <!-- Metallic Facet Light Gradient -->
-    <linearGradient id="neonLight" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ADFF2F"/>
-      <stop offset="50%" stop-color="#39FF14"/>
-      <stop offset="100%" stop-color="#00C853"/>
+    <!-- Left Leg Gradient -->
+    <linearGradient id="leftLegGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#73FF00"/>
+      <stop offset="60%" stop-color="#39FF14"/>
+      <stop offset="100%" stop-color="#00E676"/>
     </linearGradient>
 
-    <!-- Cyan Highlight Gradient -->
-    <linearGradient id="cyanGlow" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#00E5FF"/>
-      <stop offset="60%" stop-color="#00FFB2"/>
-      <stop offset="100%" stop-color="#39FF14"/>
+    <!-- Right Leg Gradient -->
+    <linearGradient id="rightLegGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00FFB2"/>
+      <stop offset="50%" stop-color="#00E5FF"/>
+      <stop offset="100%" stop-color="#00B0FF"/>
     </linearGradient>
 
-    <!-- Gold Accent Crest Gradient -->
-    <linearGradient id="goldAccent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FFE600"/>
+    <!-- Cap Frame Wire Gradient -->
+    <linearGradient id="capWireGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#73FF00"/>
+      <stop offset="50%" stop-color="#00FFB2"/>
+      <stop offset="100%" stop-color="#00E5FF"/>
+    </linearGradient>
+
+    <!-- Amber Gold Tassel Node -->
+    <linearGradient id="goldTasselGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF176"/>
+      <stop offset="50%" stop-color="#FFD600"/>
       <stop offset="100%" stop-color="#FF9100"/>
     </linearGradient>
 
-    <!-- Radial Ambient Glow -->
-    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#39FF14" stop-opacity="0.3"/>
-      <stop offset="60%" stop-color="#00E5FF" stop-opacity="0.1"/>
+    <!-- Radial Core Glow -->
+    <radialGradient id="nexusAuraGlow" cx="50%" cy="48%" r="48%">
+      <stop offset="0%" stop-color="#39FF14" stop-opacity="0.25"/>
+      <stop offset="55%" stop-color="#00E5FF" stop-opacity="0.12"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </radialGradient>
 
-    <!-- Intense Neon Multi-Layer Glow Filter -->
-    <filter id="ultraGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="16" result="blur1"/>
-      <feGaussianBlur stdDeviation="6" result="blur2"/>
+    <!-- Multi-stage Neon Filter -->
+    <filter id="neonAura" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="blurWide"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blurMed"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blurSharp"/>
       <feMerge>
-        <feMergeNode in="blur1"/>
-        <feMergeNode in="blur2"/>
+        <feMergeNode in="blurWide"/>
+        <feMergeNode in="blurMed"/>
+        <feMergeNode in="blurSharp"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
 
-    <!-- Inner Shadow / Drop Shadow Filter -->
-    <filter id="shadowDepth" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.85"/>
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#00FF88" flood-opacity="0.35"/>
+    <!-- Subtle Node Glow -->
+    <filter id="nodeGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
     </filter>
   </defs>
 
-  <!-- Container Box with Rounded Corner (App Icon Base) -->
-  <rect width="512" height="512" rx="115" fill="url(#bgGrad)"/>
+  <!-- Dark Obsidian App Badge Base (Squircle) -->
+  <rect width="512" height="512" rx="118" fill="url(#nexusBgGrad)" />
 
-  <!-- Subtle Cyber Grid Background -->
-  <circle cx="256" cy="256" r="230" fill="url(#centerGlow)"/>
-  
-  <rect width="504" height="504" x="4" y="4" rx="111" fill="none" stroke="url(#neonMain)" stroke-width="3.5" stroke-opacity="0.35"/>
-  <rect width="480" height="480" x="16" y="16" rx="99" fill="none" stroke="#39FF14" stroke-width="1.5" stroke-opacity="0.15" stroke-dasharray="8 6"/>
+  <!-- Ambient Glow in Badge Center -->
+  <circle cx="256" cy="256" r="230" fill="url(#nexusAuraGlow)"/>
 
-  <!-- Futuristic Cyber Circuit Accent Lines in Background -->
-  <g opacity="0.18" stroke="url(#neonMain)" stroke-width="2" fill="none" stroke-linecap="round">
-    <path d="M 80,140 L 140,140 L 180,180"/>
-    <circle cx="80" cy="140" r="4" fill="#39FF14"/>
-    <path d="M 432,140 L 372,140 L 332,180"/>
-    <circle cx="432" cy="140" r="4" fill="#00E5FF"/>
-    <path d="M 80,372 L 140,372 L 170,342"/>
-    <circle cx="80" cy="372" r="4" fill="#00FF88"/>
-    <path d="M 432,372 L 372,372 L 342,342"/>
-    <circle cx="432" cy="372" r="4" fill="#39FF14"/>
+  <!-- Outer Border Stroke with Glowing Highlights -->
+  <rect width="504" height="504" x="4" y="4" rx="114" fill="none" stroke="url(#nexusNeonGrad)" stroke-width="2.5" stroke-opacity="0.35"/>
+
+  <!-- INNER LOGO GROUP WITH HIGH-VIBRANCY NEON GLOW -->
+  <g filter="url(#neonAura)">
+
+    <!-- ================= 1. GRADUATION CAP & NEURAL NODES ================= -->
+    <!-- Mortarboard Diamond Frame -->
+    <path d="M 256,128 L 356,176 L 256,224 L 156,176 Z" 
+          fill="none" 
+          stroke="url(#capWireGrad)" 
+          stroke-width="5.5" 
+          stroke-linejoin="round" 
+          stroke-linecap="round"/>
+
+    <!-- Tassel Wire -->
+    <line x1="256" y1="176" x2="230" y2="195" 
+          stroke="#FFD600" 
+          stroke-width="4.5" 
+          stroke-linecap="round"/>
+
+    <!-- Tassel Gold Node (Center Accent) -->
+    <circle cx="258" cy="176" r="9" fill="url(#goldTasselGrad)" filter="url(#nodeGlow)"/>
+    <circle cx="258" cy="176" r="3.5" fill="#FFFFFF"/>
+
+    <!-- Top Apex Node (Green/Lime) -->
+    <circle cx="256" cy="128" r="9.5" fill="#73FF00" filter="url(#nodeGlow)"/>
+    <circle cx="256" cy="128" r="4" fill="#FFFFFF"/>
+
+    <!-- Left Wing Node (Lime/Cyan) -->
+    <circle cx="156" cy="176" r="9" fill="#39FF14" filter="url(#nodeGlow)"/>
+    <circle cx="156" cy="176" r="3.5" fill="#FFFFFF"/>
+
+    <!-- Right Wing Node (Cyan/Aqua) -->
+    <circle cx="356" cy="176" r="9" fill="#00E5FF" filter="url(#nodeGlow)"/>
+    <circle cx="356" cy="176" r="3.5" fill="#FFFFFF"/>
+
+    <!-- ================= 2. THE MONOGRAM 'N' ================= -->
+    <!-- Left Vertical Leg of 'N' -->
+    <path d="M 172,212 
+             L 212,212 
+             L 212,342 
+             C 212,347 207,352 201,352 
+             L 183,352 
+             C 177,352 172,347 172,342 Z" 
+          fill="url(#leftLegGrad)"/>
+
+    <!-- Right Vertical Leg of 'N' -->
+    <path d="M 302,212 
+             L 340,212 
+             C 346,212 351,217 351,223 
+             L 351,342 
+             C 351,347 346,352 340,352 
+             L 302,352 Z" 
+          fill="url(#rightLegGrad)"/>
+
+    <!-- Central Dynamic Slanted Diagonal Ribbon of 'N' -->
+    <path d="M 208,190 
+             L 242,190 
+             L 338,338 
+             C 341,343 338,350 332,350 
+             L 298,350 
+             L 208,206 
+             C 205,201 208,190 208,190 Z" 
+          fill="url(#nexusNeonGrad)"/>
+
+    <!-- Specular 3D Reflection Lines for Depth & Shine -->
+    <path d="M 212,204 L 240,192 L 334,338 L 322,346 Z" fill="#FFFFFF" opacity="0.25"/>
+    <path d="M 174,214 L 186,214 L 186,348 L 174,348 Z" fill="#FFFFFF" opacity="0.20"/>
+    <path d="M 338,214 L 349,214 L 349,348 L 338,348 Z" fill="#FFFFFF" opacity="0.25"/>
+
+    <!-- ================= 3. LOWER HORIZON ACCENT ARC ================= -->
+    <path d="M 148,374 Q 256,400 364,374" 
+          fill="none" 
+          stroke="url(#nexusNeonGrad)" 
+          stroke-width="5" 
+          stroke-linecap="round" 
+          opacity="0.95"/>
+
   </g>
-
-  <!-- ICON CORE: ULTRA HIGH QUALITY FUTURISTIC 'N' MONOGRAM -->
-  <g filter="url(#shadowDepth)">
-    <g filter="url(#ultraGlow)">
-      
-      <!-- Left Vertical Bar of 'N' -->
-      <path d="M 125,120 
-               C 125,110 133,102 143,102 
-               L 182,102 
-               C 192,102 200,110 200,120 
-               L 200,392 
-               C 200,402 192,410 182,410 
-               L 143,410 
-               C 133,410 125,402 125,392 Z" 
-            fill="url(#neonLight)"/>
-
-      <!-- Right Vertical Bar of 'N' -->
-      <path d="M 312,120 
-               C 312,110 320,102 330,102 
-               L 369,102 
-               C 379,102 387,110 387,120 
-               L 387,392 
-               C 387,402 379,410 369,410 
-               L 330,410 
-               C 320,410 312,402 312,392 Z" 
-            fill="url(#cyanGlow)"/>
-
-      <!-- Central Dynamic Diagonal Slice of 'N' with Sharp 3D Angle -->
-      <path d="M 175,105 
-               L 337,348 
-               C 343,357 348,367 348,378 
-               L 348,400 
-               C 348,408 340,413 332,410 
-               L 315,404 
-               L 153,161 
-               C 147,152 142,142 142,131 
-               L 142,110 
-               C 142,102 150,97 158,100 Z" 
-            fill="url(#neonMain)"/>
-
-      <!-- Futuristic Diamond Crest Node at Apex of N -->
-      <polygon points="256,65 278,92 256,119 234,92" fill="url(#goldAccent)"/>
-      <circle cx="256" cy="92" r="5" fill="#FFFFFF"/>
-
-      <!-- Specular Facet Highlights for 3D Luxury Metallic Depth -->
-      <path d="M 143,102 L 182,102 L 182,392 L 165,392 Z" fill="#FFFFFF" opacity="0.18"/>
-      <path d="M 330,102 L 369,102 L 369,392 L 352,392 Z" fill="#FFFFFF" opacity="0.22"/>
-      <path d="M 175,105 L 337,348 L 325,360 L 163,117 Z" fill="#FFFFFF" opacity="0.25"/>
-
-      <!-- Glowing Energy Nodes on the 'N' Vertices -->
-      <circle cx="162.5" cy="102" r="7" fill="#ADFF2F"/>
-      <circle cx="349.5" cy="410" r="7" fill="#00E5FF"/>
-      <circle cx="349.5" cy="102" r="6" fill="#00FF99"/>
-      <circle cx="162.5" cy="410" r="6" fill="#39FF14"/>
-
-    </g>
-  </g>
-
-  <!-- Bottom Accent Light Arc -->
-  <path d="M 140,458 Q 256,488 372,458" fill="none" stroke="url(#neonMain)" stroke-width="5" stroke-linecap="round" opacity="0.85" filter="url(#ultraGlow)"/>
 </svg>

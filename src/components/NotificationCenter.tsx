@@ -79,6 +79,12 @@ export function NotificationCenter({
     setIsRequestingPush(true);
     try {
       const result = await oneSignalService.requestPushPermission();
+      
+      if (result.isIframe) {
+        onShowNotification('Security Restriction: To enable Push Notifications, please click the external arrow icon (top-right of the AI Studio preview) to open the app in a new tab!', 'error');
+        return;
+      }
+
       setPushPermission(result.status);
       if (result.success || result.status === 'granted') {
         onShowNotification('Push Notifications Enabled! You will receive live alerts.', 'success');

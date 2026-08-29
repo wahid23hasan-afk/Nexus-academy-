@@ -32,7 +32,7 @@ class OneSignalService {
     const appId =
       customAppId ||
       import.meta.env.VITE_ONESIGNAL_APP_ID ||
-      '37b799ce-aa4d-45ab-92ed-4690df8f42f1'; // Safe default fallback
+      '74e9438f-be4f-424f-9f93-1cbebf369984'; // Specific production App ID
 
     if (this.isInitialized && this.currentAppId === appId) {
       return;
@@ -68,6 +68,19 @@ class OneSignalService {
 
             if ('Notification' in window) {
               this.permissionStatus = Notification.permission;
+            }
+
+            // Prompt user to allow notification permission on launch if status is default
+            if (OneSignal.Notifications && typeof OneSignal.Notifications.requestPermission === 'function') {
+              if (Notification.permission === 'default') {
+                setTimeout(async () => {
+                  try {
+                    await OneSignal.Notifications.requestPermission();
+                  } catch (err) {
+                    console.warn('[OneSignal] Launch permission request notice:', err);
+                  }
+                }, 2000);
+              }
             }
           }
           resolve();
@@ -124,6 +137,17 @@ class OneSignalService {
           });
           OneSignal.sendTags(tags);
         }
+
+        // Prompt user to allow notification permission on first login/link
+        if (OneSignal.Notifications && typeof OneSignal.Notifications.requestPermission === 'function') {
+          if (Notification.permission === 'default') {
+            try {
+              await OneSignal.Notifications.requestPermission();
+            } catch (e) {
+              console.warn('[OneSignal] Login permission request notice:', e);
+            }
+          }
+        }
       } catch (err) {
         console.warn('[OneSignal] User linking note:', err);
       }
@@ -173,54 +197,78 @@ class OneSignalService {
   /**
    * Request Push Permission (1-Click trigger for Bell / Toggle buttons)
    */
-  public async requestPushPermission(): Promise<{ success: boolean; status: NotificationPermission }> {
+  public async requestPushPermission(): Promise<{ success: boolean; status: NotificationPermission; isIframe?: boolean }> {
     if (typeof window === 'undefined') {
       return { success: false, status: 'default' };
     }
 
-    try {
-      let isGranted = false;
-
-      // 1. Try via OneSignal SDK
-      if (window.OneSignal?.Notifications?.requestPermission) {
-        try {
-          const res = await window.OneSignal.Notifications.requestPermission();
-          isGranted = Boolean(res);
-        } catch (e) {
-          // Fallback to browser standard
-        }
+    const isIframe = (() => {
+      try {
+        return window.self !== window.top;
+      } catch (e) {
+        return true;
       }
+    })();
 
-      // 2. Standard Browser Notification API Fallback
-      if (!isGranted && 'Notification' in window) {
-        const perm = await Notification.requestPermission();
-        isGranted = perm === 'granted';
-        this.permissionStatus = perm;
-      } else if (isGranted) {
-        this.permissionStatus = 'granted';
-      }
-
-      const finalStatus: NotificationPermission = isGranted ? 'granted' : this.permissionStatus;
-      this.notifyPermissionListeners(finalStatus);
-
-      // Dispatch global window event
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('nexus_push_permission_changed', { detail: { permission: finalStatus } })
-        );
-      }
-
-      return {
-        success: isGranted,
-        status: finalStatus,
-      };
-    } catch (error) {
-      console.warn('[OneSignal] Permission request note:', error);
-      return {
-        success: false,
-        status: this.permissionStatus,
-      };
+    if (isIframe) {
+      return { success: false, status: 'default', isIframe: true };
     }
+
+    // Set a safety timeout of 3.5 seconds so the promise never hangs indefinitely in restricted environments
+    return new Promise<{ success: boolean; status: NotificationPermission; isIframe?: boolean }>((resolve) => {
+      const timeoutId = setTimeout(() => {
+        console.warn('[OneSignal] Permission request timed out (likely restricted).');
+        resolve({ success: false, status: 'default' });
+      }, 3500);
+
+      (async () => {
+        try {
+          let isGranted = false;
+
+          // 1. Try via OneSignal SDK
+          if (window.OneSignal?.Notifications?.requestPermission) {
+            try {
+              const res = await window.OneSignal.Notifications.requestPermission();
+              isGranted = Boolean(res);
+            } catch (e) {
+              // Fallback to browser standard
+            }
+          }
+
+          // 2. Standard Browser Notification API Fallback
+          if (!isGranted && 'Notification' in window) {
+            const perm = await Notification.requestPermission();
+            isGranted = perm === 'granted';
+            this.permissionStatus = perm;
+          } else if (isGranted) {
+            this.permissionStatus = 'granted';
+          }
+
+          const finalStatus: NotificationPermission = isGranted ? 'granted' : this.permissionStatus;
+          this.notifyPermissionListeners(finalStatus);
+
+          // Dispatch global window event
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('nexus_push_permission_changed', { detail: { permission: finalStatus } })
+            );
+          }
+
+          clearTimeout(timeoutId);
+          resolve({
+            success: isGranted,
+            status: finalStatus,
+          });
+        } catch (error) {
+          console.warn('[OneSignal] Permission request note:', error);
+          clearTimeout(timeoutId);
+          resolve({
+            success: false,
+            status: this.permissionStatus,
+          });
+        }
+      })();
+    });
   }
 
   /**

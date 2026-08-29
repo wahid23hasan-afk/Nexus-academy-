@@ -10,6 +10,7 @@ interface PrivacySecurityViewProps {
 export const PrivacySecurityView: React.FC<PrivacySecurityViewProps> = ({ onBack }) => {
   const [pushStatus, setPushStatus] = useState<NotificationPermission>(() => oneSignalService.getPermissionStatus());
   const [isRequesting, setIsRequesting] = useState<boolean>(false);
+  const [iframeWarning, setIframeWarning] = useState<boolean>(false);
 
   useEffect(() => {
     setPushStatus(oneSignalService.getPermissionStatus());
@@ -21,9 +22,14 @@ export const PrivacySecurityView: React.FC<PrivacySecurityViewProps> = ({ onBack
 
   const handleTogglePush = async () => {
     if (pushStatus === 'granted') return;
+    setIframeWarning(false);
     setIsRequesting(true);
     try {
       const res = await oneSignalService.requestPushPermission();
+      if (res.isIframe) {
+        setIframeWarning(true);
+        return;
+      }
       setPushStatus(res.status);
     } catch (e) {
       console.warn(e);
@@ -98,6 +104,17 @@ export const PrivacySecurityView: React.FC<PrivacySecurityViewProps> = ({ onBack
               )}
             </button>
           </div>
+
+          {iframeWarning && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start space-x-2 animate-pulse mt-2">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <strong>Browser Security Restriction:</strong> Since you are previewing the application inside the Google AI Studio iframe window, the browser blocks standard notification permission requests. 
+                <br />
+                <span className="text-white font-medium mt-1 block">To enable alerts, please click the "Open in New Tab" icon (the external arrow box) in the top-right corner of AI Studio, and click this button there!</span>
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-4">
