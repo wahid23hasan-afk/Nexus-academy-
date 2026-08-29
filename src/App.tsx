@@ -96,6 +96,7 @@ export default function App() {
   const [verificationIdFromUrl, setVerificationIdFromUrl] = useState<string>('');
   const [showGlobalAdmin, setShowGlobalAdmin] = useState<boolean>(false);
   const [adminInitialTab, setAdminInitialTab] = useState<'approvals' | 'notifications' | 'coupons' | 'payments' | 'curriculum' | 'storage' | 'xp_store' | 'studyFeatures' | 'live_classes' | 'support' | 'settings' | 'reviews'>('approvals');
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState<boolean>(false);
 
   useEffect(() => {
     const handleOpenAdmin = () => setShowGlobalAdmin(true);
@@ -161,6 +162,15 @@ export default function App() {
     return () => window.removeEventListener('nexus_profile_updated', handleProfileUpdate);
   }, []);
 
+  // Save userProfile to local storage for instant offline restoration
+  useEffect(() => {
+    if (userProfile) {
+      try {
+        localStorage.setItem('nexus_cached_user_profile', JSON.stringify(userProfile));
+      } catch (e) {}
+    }
+  }, [userProfile]);
+
   // Firebase Authentication State Observer (Session Persistence & Auto Login)
   useEffect(() => {
     let isMounted = true;
@@ -184,7 +194,7 @@ export default function App() {
           const data = result.data;
           
           if (isMounted) {
-            setUserProfile({
+            const p = {
               uid: freshUser.uid,
               fullName: data?.fullName || freshUser.displayName || 'Scholar',
               username: data?.username || '',
@@ -193,14 +203,20 @@ export default function App() {
               photoURL: data?.photoURL || freshUser.photoURL || undefined,
               email: freshUser.email || data?.email || '',
               role: data?.role || (freshUser.email === 'wahid23hasan@gmail.com' ? 'super_admin' : 'student'),
-            });
-
+            };
+            setUserProfile(p);
+            try { localStorage.setItem('nexus_cached_user_profile', JSON.stringify(p)); } catch (e) {}
             setIsProfileCompleted(result.profileCompleted ?? true);
           }
         } catch (err) {
           console.warn('Profile read notice in App (using authenticated fallback):', err);
           if (isMounted) {
-            setUserProfile(prev => prev || {
+            const cachedStr = localStorage.getItem('nexus_cached_user_profile');
+            let cachedObj = null;
+            if (cachedStr) {
+              try { cachedObj = JSON.parse(cachedStr); } catch (e) {}
+            }
+            setUserProfile(prev => prev || cachedObj || {
               uid: freshUser.uid,
               fullName: freshUser.displayName || freshUser.email?.split('@')[0] || 'Scholar',
               username: freshUser.email?.split('@')[0] || 'scholar',
@@ -212,6 +228,21 @@ export default function App() {
         }
       } else {
         if (isMounted) {
+          // Bug #2: Offline session preservation check
+          if (!navigator.onLine) {
+            const cachedStr = localStorage.getItem('nexus_cached_user_profile');
+            if (cachedStr) {
+              try {
+                const parsed = JSON.parse(cachedStr);
+                if (parsed && parsed.uid) {
+                  setUserProfile(parsed);
+                  setIsProfileCompleted(true);
+                  setIsAuthLoading(false);
+                  return;
+                }
+              } catch (e) {}
+            }
+          }
           setUserProfile(null);
           setIsProfileCompleted(null);
         }
@@ -228,10 +259,44 @@ export default function App() {
     };
   }, []);
 
-  
   const triggerToast = useCallback((message: string, type: 'success' | 'error') => {
     setToast({ message, type });
   }, []);
+
+  // User panel back-press handler with confirmation dialog before closing/exiting
+  useEffect(() => {
+    try {
+      window.history.pushState({ page: 'main' }, '', window.location.href);
+    } catch (e) {}
+
+    const handlePopState = () => {
+      // Check if any other modal or dialog is currently open
+      const openModals = document.querySelectorAll('.fixed.inset-0:not(#exit-confirm-modal), [role="dialog"]:not(#exit-confirm-modal)');
+      if (openModals.length > 0) {
+        try { window.history.pushState({ page: 'main' }, '', window.location.href); } catch (e) {}
+        return;
+      }
+
+      // Show confirmation dialog before closing the app
+      try { window.history.pushState({ page: 'main' }, '', window.location.href); } catch (e) {}
+      setShowExitConfirmModal(true);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleConfirmExitApp = () => {
+    setShowExitConfirmModal(false);
+    if ((navigator as any)?.app?.exitApp) {
+      (navigator as any).app.exitApp();
+    } else {
+      try {
+        window.close();
+      } catch (e) {}
+      window.location.href = 'about:blank';
+    }
+  };
 
   const handleLogout = async () => {
     await authService.logout();
@@ -498,6 +563,52 @@ export default function App() {
         }}
         onShowNotification={triggerToast}
       />
+
+      {/* Exit Confirmation Dialog Modal */}
+      <AnimatePresence>
+        {showExitConfirmModal && (
+          <div id="exit-confirm-modal" className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              className="w-full max-w-sm bg-slate-900 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-4 text-center relative overflow-hidden"
+            >
+              {/* Subtle ambient glows */}
+              <div className="absolute -top-12 -left-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute -bottom-12 -right-12 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+
+              <div className="w-12 h-12 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                <LogOut size={22} />
+              </div>
+
+              <div className="space-y-1.5">
+                <h3 className="text-base font-bold text-white font-sans">Exit Application / অ্যাপ থেকে বের হবেন?</h3>
+                <p className="text-xs text-slate-300 font-sans leading-relaxed">
+                  Are you sure you want to close the application? Your learning progress and session are safely stored.
+                </p>
+              </div>
+
+              <div className="pt-2 flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setShowExitConfirmModal(false)}
+                  className="flex-1 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 border border-white/10 text-white text-xs font-mono font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  Stay in App
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmExitApp}
+                  className="flex-1 py-2.5 px-4 bg-red-600/90 hover:bg-red-500 border border-red-500/30 text-white text-xs font-mono font-bold rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer"
+                >
+                  Exit App
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Milestone Toast Notification System with Framer Motion */}
       <MilestoneToastContainer />

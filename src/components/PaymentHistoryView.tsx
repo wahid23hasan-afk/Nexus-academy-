@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, CreditCard, Clock, CheckCircle2, XCircle, RefreshCw, AlertTriangle, ArrowRight, Copy, Check, ShieldAlert, Receipt } from 'lucide-react';
+import { ChevronLeft, CreditCard, Clock, CheckCircle2, XCircle, RefreshCw, AlertTriangle, ArrowRight, Copy, Check, ShieldAlert, Receipt, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from '../services/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { courseService } from '../services/courseService';
 import { Purchase, Course } from '../types/course';
+import { RefundRequestModal } from './RefundRequestModal';
 
 interface PaymentHistoryViewProps {
   onBack: () => void;
@@ -24,6 +25,40 @@ export const PaymentHistoryView: React.FC<PaymentHistoryViewProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [filter, setFilter] = useState<'all' | 'rejected' | 'pending' | 'approved'>('all');
   const [copiedTxnId, setCopiedTxnId] = useState<string | null>(null);
+
+  // Refund modal & history state
+  const [refundTarget, setRefundTarget] = useState<{ courseId: string; courseTitle: string; amount: number } | null>(null);
+  const [userRefundRequests, setUserRefundRequests] = useState<any[]>([]);
+
+  useEffect(() => {
+    const currentUid = auth.currentUser?.uid;
+    const currentEmail = auth.currentUser?.email || userProfile?.email;
+    const currentUsername = userProfile?.username;
+
+    const qRefunds = query(collection(db, 'refund_requests'));
+    const unsubRefunds = onSnapshot(qRefunds, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const isMatch = 
+          (currentUid && data.userId === currentUid) ||
+          (currentEmail && data.userEmail && data.userEmail.toLowerCase() === currentEmail.toLowerCase()) ||
+          (currentUsername && data.userId === currentUsername);
+
+        if (isMatch) {
+          list.push({
+            id: docSnap.id,
+            ...data,
+            createdAt: data.createdAt || new Date().toISOString()
+          });
+        }
+      });
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setUserRefundRequests(list);
+    }, (err) => console.warn('Error fetching refund requests in PaymentHistoryView:', err));
+
+    return () => unsubRefunds();
+  }, [userProfile]);
 
   const fetchUserPurchases = async () => {
     setLoading(true);
@@ -378,11 +413,21 @@ export const PaymentHistoryView: React.FC<PaymentHistoryViewProps> = ({
                 )}
 
                 {isApproved && (
-                  <div className="mt-3 p-2.5 bg-emerald-950/40 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-300 leading-relaxed flex items-center justify-between">
+                  <div className="mt-3 p-2.5 bg-emerald-950/40 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-300 leading-relaxed flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center space-x-2">
                       <CheckCircle2 size={14} className="text-[#39FF14] shrink-0" />
-                      <span>Course unlocked! You can access all modules & live classes.</span>
+                      <span>Course unlocked! Access all modules & live classes.</span>
                     </div>
+                    <button
+                      onClick={() => setRefundTarget({
+                        courseId: purchase.courseId,
+                        courseTitle,
+                        amount: purchase.amount || 0
+                      })}
+                      className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer"
+                    >
+                      Request Refund
+                    </button>
                   </div>
                 )}
               </motion.div>
@@ -390,6 +435,84 @@ export const PaymentHistoryView: React.FC<PaymentHistoryViewProps> = ({
           })}
         </div>
       )}
+
+      {/* REFUND REQUESTS HISTORY SECTION */}
+      {userRefundRequests.length > 0 && (
+        <div className="pt-4 border-t border-white/10 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-mono font-bold text-slate-300 uppercase flex items-center space-x-2">
+              <RotateCcw size={15} className="text-amber-400" />
+              <span>Refund Request History ({userRefundRequests.length})</span>
+            </h3>
+            <span className="text-[10px] font-mono text-slate-400">Real-time status tracking</span>
+          </div>
+
+          <div className="space-y-2.5">
+            {userRefundRequests.map((req) => (
+              <div
+                key={req.id}
+                className="p-3.5 rounded-2xl bg-slate-950 border border-white/10 space-y-2 text-xs font-sans shadow-md"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-bold text-white text-xs">{req.courseTitle}</h4>
+                    <span className="text-[10px] font-mono text-slate-400 block mt-0.5">Payout: {req.bkashNumber || 'N/A'}</span>
+                  </div>
+
+                  <div className="text-right flex flex-col items-end">
+                    <span className="font-mono font-bold text-amber-400">৳{req.amount}</span>
+                    <span className={`mt-1 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-wider flex items-center space-x-1 ${
+                      req.status === 'approved'
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                        : req.status === 'rejected'
+                        ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                        : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
+                    }`}>
+                      {req.status === 'approved' && <CheckCircle2 size={11} />}
+                      {req.status === 'rejected' && <XCircle size={11} />}
+                      {req.status === 'pending' && <Clock size={11} />}
+                      <span>{req.status}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-300 bg-white/[0.02] p-2 rounded-xl border border-white/5">
+                  <span className="text-slate-400 font-mono text-[9px] uppercase block mb-0.5">Reason:</span>
+                  <span>{req.reason}</span>
+                </div>
+
+                {req.adminNote && (
+                  <div className={`p-2 rounded-xl text-[11px] border ${
+                    req.status === 'approved' 
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' 
+                      : req.status === 'rejected'
+                      ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+                      : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                  }`}>
+                    <span className="font-mono text-[9px] uppercase font-bold block mb-0.5">Admin Note:</span>
+                    <span>{req.adminNote}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center text-[9px] font-mono text-slate-500 pt-1 border-t border-white/5">
+                  <span>Submitted: {new Date(req.createdAt).toLocaleString()}</span>
+                  {req.resolvedAt && <span>Updated: {new Date(req.resolvedAt).toLocaleString()}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* REFUND REQUEST MODAL */}
+      <RefundRequestModal
+        isOpen={refundTarget !== null}
+        onClose={() => setRefundTarget(null)}
+        courseId={refundTarget?.courseId || ''}
+        courseTitle={refundTarget?.courseTitle || ''}
+        amount={refundTarget?.amount || 0}
+        onShowNotification={onShowNotification}
+      />
     </div>
   );
 };

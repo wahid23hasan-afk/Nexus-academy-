@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { Course, Coupon, Offer, CourseBenefit } from '../types/course';
 import { courseService } from '../services/courseService';
+import { auth } from '../services/firebase';
 
 // Dynamic helper to match icon names to Lucide react components
 const DynamicIcon = ({ name, size = 18, className = '' }: { name: string; size?: number; className?: string }) => {
@@ -153,9 +154,34 @@ export function EnrollmentConfirmationView({
       return;
     }
 
+    // Bug #11: Single-User Restricted Secret Coupon / Voucher Validation
+    const currentUid = auth.currentUser?.uid;
+    const currentEmail = (auth.currentUser?.email || (userProfile as any)?.email || '').toLowerCase().trim();
+
+    if (found.ownerUserId || found.userEmail || found.isSecret) {
+      const isOwnerMatch = 
+        (found.ownerUserId && found.ownerUserId === currentUid) ||
+        (found.userEmail && found.userEmail.toLowerCase().trim() === currentEmail);
+
+      if (!isOwnerMatch) {
+        setCouponError('Secret coupon code date expired / Invalid for this account');
+        onShowNotification('Secret coupon code date expired / Invalid for this account', 'error');
+        return;
+      }
+    }
+
+    if (found.expiryDate) {
+      const expTime = new Date(found.expiryDate).getTime();
+      if (!isNaN(expTime) && Date.now() > expTime) {
+        setCouponError('Secret coupon code date expired / Invalid for this account');
+        onShowNotification('Secret coupon code date expired / Invalid for this account', 'error');
+        return;
+      }
+    }
+
     if (!found.isActive) {
-      setCouponError('This promotional code has expired.');
-      onShowNotification('Coupon has expired.', 'error');
+      setCouponError('Secret coupon code date expired / Invalid for this account');
+      onShowNotification('Secret coupon code date expired / Invalid for this account', 'error');
       return;
     }
 

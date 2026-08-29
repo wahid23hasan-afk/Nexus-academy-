@@ -54,7 +54,8 @@ import {
   Wrench,
   ShieldAlert,
   Sliders,
-  Power
+  Power,
+  RotateCcw
 } from 'lucide-react';
 import { Purchase, Coupon, PaymentMethodConfig, Course, CurriculumChapter, CurriculumLesson } from '../types/course';
 import { LessonVideo } from '../services/learningService';
@@ -64,7 +65,7 @@ import { notificationService } from '../services/notificationService';
 import { learningService } from '../services/learningService';
 import { liveService } from '../services/liveService';
 import { LiveClass, LiveClassStatus } from '../types/live';
-import { db, storage } from '../services/firebase';
+import { db, storage, auth } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, getDoc, updateDoc, deleteDoc, getDocs, serverTimestamp, collection, onSnapshot, query, arrayUnion } from 'firebase/firestore';
 import { CourseSection, CourseLesson } from '../types/course';
@@ -160,6 +161,10 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
   const [adminReplyText, setAdminReplyText] = useState<string>('');
   const [sendingAdminReply, setSendingAdminReply] = useState<boolean>(false);
   const [supportFilter, setSupportFilter] = useState<'all' | 'open' | 'closed'>('all');
+
+  // Refund Requests state
+  const [refundRequestsList, setRefundRequestsList] = useState<any[]>([]);
+  const [loadingRefundRequests, setLoadingRefundRequests] = useState<boolean>(true);
 
   // XP Store & Perks Management state
   const [xpStoreItems, setXpStoreItems] = useState<StoreItem[]>([]);
@@ -294,8 +299,50 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
       setLoadingSupportTickets(false);
     });
 
-    return () => unsubscribe();
+    // Listener for refund_requests
+    setLoadingRefundRequests(true);
+    const qRefunds = query(collection(db, 'refund_requests'));
+    const unsubscribeRefunds = onSnapshot(qRefunds, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        list.push({
+          id: docSnap.id,
+          ...data,
+          createdAt: data.createdAt || new Date().toISOString()
+        });
+      });
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setRefundRequestsList(list);
+      setLoadingRefundRequests(false);
+    }, (err) => {
+      console.error('Error listening to refund_requests in Admin:', err);
+      setLoadingRefundRequests(false);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeRefunds();
+    };
   }, [isOpen]);
+
+  const handleUpdateRefundStatus = async (requestId: string, newStatus: 'approved' | 'rejected', defaultNote?: string) => {
+    try {
+      const note = prompt('Enter optional Admin note for student (এডমিন বার্তা লিখুন):', defaultNote || (newStatus === 'approved' ? 'Refund approved and payment credited to payout number.' : 'Refund request declined after review.'));
+      
+      const refDoc = doc(db, 'refund_requests', requestId);
+      await updateDoc(refDoc, {
+        status: newStatus,
+        adminNote: note !== null ? note : (defaultNote || ''),
+        resolvedAt: new Date().toISOString()
+      });
+
+      onShowNotification(`Refund request updated to ${newStatus.toUpperCase()}`, 'success');
+    } catch (err: any) {
+      console.error('Error updating refund request:', err);
+      onShowNotification('Failed to update refund request status.', 'error');
+    }
+  };
 
   const handleSendAdminReply = async (ticketId: string) => {
     if (!adminReplyText.trim()) return;
@@ -2117,6 +2164,111 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
                   ))}
                 </div>
               )}
+
+              {/* Student Refund Requests Management */}
+              <div className="pt-4 border-t border-white/10 space-y-3 font-mono">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold text-xs">
+                      💰
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-mono font-bold text-white uppercase">Student Course Refund Applications ({refundRequestsList.length})</h4>
+                      <p className="text-[10px] text-slate-400">Review payout details, student notes & approve/reject requests</p>
+                    </div>
+                  </div>
+
+                  <span className="text-[10px] text-amber-400 font-bold px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20">
+                    {refundRequestsList.filter(r => r.status === 'pending').length} PENDING
+                  </span>
+                </div>
+
+                {loadingRefundRequests ? (
+                  <div className="text-center py-6 text-slate-400 text-xs">Syncing refund applications...</div>
+                ) : refundRequestsList.length === 0 ? (
+                  <div className="p-6 text-center bg-white/[0.01] border border-white/5 rounded-2xl text-xs text-slate-400">
+                    No refund requests recorded in Firestore.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1 scrollbar-thin">
+                    {refundRequestsList.map((req) => (
+                      <div key={req.id} className={`p-3.5 rounded-2xl border text-xs space-y-2.5 ${
+                        req.status === 'pending'
+                          ? 'bg-slate-950 border-amber-500/40'
+                          : req.status === 'approved'
+                          ? 'bg-slate-950/80 border-emerald-500/30'
+                          : 'bg-slate-950/80 border-rose-500/30'
+                      }`}>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-white font-bold">{req.courseTitle || 'Course Purchase'}</span>
+                            <p className="text-[10px] text-slate-400">Student: {req.userName || req.userEmail || req.userId}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-sm font-bold text-emerald-400">৳{req.amount}</span>
+                            <div className="mt-0.5">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                req.status === 'approved'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : req.status === 'rejected'
+                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                              }`}>
+                                {req.status}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[10px] bg-white/[0.02] p-2 rounded-xl border border-white/5 text-slate-300">
+                          <div>
+                            <span className="text-slate-500 block uppercase">bKash/Nagad Payout:</span>
+                            <strong className="text-white font-mono">{req.bkashNumber || 'N/A'}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block uppercase">Reason:</span>
+                            <span className="text-slate-200">{req.reason}</span>
+                          </div>
+                        </div>
+
+                        {req.notes && (
+                          <div className="text-[10px] p-2 bg-white/[0.02] rounded-xl border border-white/5 text-slate-300">
+                            <span className="text-slate-500 uppercase block">Student Note:</span>
+                            <span>{req.notes}</span>
+                          </div>
+                        )}
+
+                        {req.adminNote && (
+                          <div className="text-[10px] p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-300">
+                            <span className="text-emerald-400 uppercase font-bold block">Current Admin Note:</span>
+                            <span>{req.adminNote}</span>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/5">
+                          <span className="text-[9px] text-slate-500">{new Date(req.createdAt).toLocaleString()}</span>
+
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleUpdateRefundStatus(req.id, 'approved')}
+                              className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center space-x-1"
+                            >
+                              <span>✓ Approve Refund</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleUpdateRefundStatus(req.id, 'rejected')}
+                              className="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center space-x-1"
+                            >
+                              <span>✕ Reject Refund</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* All Purchase History */}
               <div className="pt-4 border-t border-white/10 space-y-2">
@@ -4266,10 +4418,79 @@ export function AdminPanelModal({ isOpen, onClose, onShowNotification, initialTa
                   )}
                 </div>
               </div>
+
+              {/* MY REFUND REQUESTS SECTION */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-white/10 space-y-3 font-mono">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div className="flex items-center space-x-2">
+                    <RotateCcw size={16} className="text-amber-400" />
+                    <h3 className="text-xs font-bold text-white uppercase">My Refund Requests</h3>
+                  </div>
+                  <span className="text-[10px] text-slate-400">
+                    UID: <code className="text-amber-400">{auth.currentUser?.uid || 'N/A'}</code>
+                  </span>
+                </div>
+
+                {loadingRefundRequests ? (
+                  <div className="text-center py-6 text-slate-400 text-xs">Fetching my refund applications...</div>
+                ) : refundRequestsList.filter(r => r.userId === auth.currentUser?.uid).length === 0 ? (
+                  <div className="p-6 text-center bg-white/[0.01] border border-white/5 rounded-2xl text-xs text-slate-400">
+                    No personal refund requests found matching user ID ({auth.currentUser?.uid || 'guest'}).
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {refundRequestsList
+                      .filter(r => r.userId === auth.currentUser?.uid)
+                      .map((req) => (
+                        <div key={req.id} className={`p-3.5 rounded-2xl border text-xs space-y-2 ${
+                          req.status === 'pending'
+                            ? 'bg-slate-900 border-amber-500/40'
+                            : req.status === 'approved'
+                            ? 'bg-slate-900 border-emerald-500/30'
+                            : 'bg-slate-900 border-rose-500/30'
+                        }`}>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="text-white font-bold block">{req.courseTitle || 'Course Purchase'}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">Payout: {req.bkashNumber || 'N/A'}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-sm font-bold text-amber-400 block">৳{req.amount}</span>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                req.status === 'approved'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : req.status === 'rejected'
+                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                              }`}>
+                                {req.status}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-[10px] text-slate-300 bg-white/[0.02] p-2 rounded-xl border border-white/5">
+                            <span className="text-slate-500 block uppercase">Reason:</span>
+                            <span>{req.reason}</span>
+                          </div>
+
+                          {req.adminNote && (
+                            <div className="text-[10px] p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-300">
+                              <span className="text-emerald-400 font-bold block uppercase">Admin Response:</span>
+                              <span>{req.adminNote}</span>
+                            </div>
+                          )}
+
+                          <div className="flex justify-between items-center text-[9px] text-slate-500 pt-1 border-t border-white/5">
+                            <span>Submitted: {new Date(req.createdAt).toLocaleString()}</span>
+                            <span>Updated: {req.resolvedAt ? new Date(req.resolvedAt).toLocaleString() : new Date(req.createdAt).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
-
-          {/* TAB: SYSTEM SETTINGS & MAINTENANCE MODE */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
               {/* Header Title Bar */}

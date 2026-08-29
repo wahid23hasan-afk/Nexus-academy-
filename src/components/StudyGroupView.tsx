@@ -17,8 +17,17 @@ import {
   Radio, 
   Send,
   Flame,
-  UserCheck
+  UserCheck,
+  Lock,
+  Unlock,
+  Key,
+  X,
+  Link as LinkIcon,
+  Copy,
+  Share2
 } from 'lucide-react';
+import { db } from '../services/firebase';
+import { collection, addDoc, onSnapshot, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 
 interface StudyRoom {
   id: string;
@@ -30,6 +39,9 @@ interface StudyRoom {
   tags: string[];
   hostName: string;
   isPrivate?: boolean;
+  password?: string;
+  pin?: string;
+  hasPassword?: boolean;
 }
 
 const DEFAULT_ROOMS: StudyRoom[] = [
@@ -116,6 +128,264 @@ export function StudyGroupView({ userProfile, onShowNotification }: StudyGroupVi
   ]);
   const [newTaskTitle, setNewTaskTitle] = useState<string>('');
 
+  // Create Room Modal States
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
+  const [createSubject, setCreateSubject] = useState('HSC Science');
+  const [createDescription, setCreateDescription] = useState('');
+  const [createPassword, setCreatePassword] = useState('');
+
+  // Room Password Join Prompt Modal States
+  const [passwordPromptRoom, setPasswordPromptRoom] = useState<StudyRoom | null>(null);
+  const [enteredPassword, setEnteredPassword] = useState('');
+
+  // Join via Room Link Modal States
+  const [isJoinLinkModalOpen, setIsJoinLinkModalOpen] = useState(false);
+  const [inputRoomLink, setInputRoomLink] = useState('');
+  const [linkPassword, setLinkPassword] = useState('');
+  const [isSearchingLink, setIsSearchingLink] = useState(false);
+
+  // Subtle Entry Animation Effect for Protected Rooms
+  const [showUnlockEffect, setShowUnlockEffect] = useState(false);
+
+  // Firestore Real-time listener for study_rooms
+  useEffect(() => {
+    try {
+      const unsubscribe = onSnapshot(collection(db, 'study_rooms'), (snapshot) => {
+        const firestoreRooms: StudyRoom[] = snapshot.docs.map(doc => {
+          const data = doc.data();
+          const pwd = data.pin || data.password || '';
+          return {
+            id: doc.id,
+            title: data.title || 'Live Study Room',
+            subject: data.subject || 'General Study',
+            activeMembers: data.activeMembers || 1,
+            maxMembers: data.maxMembers || 15,
+            description: data.description || 'Student focus room',
+            tags: data.tags || [data.subject || 'Study Room'],
+            hostName: data.hostName || 'Scholar',
+            pin: pwd,
+            password: pwd,
+            hasPassword: Boolean(pwd)
+          };
+        });
+        setRooms([...firestoreRooms, ...DEFAULT_ROOMS]);
+      }, (err) => {
+        console.error('Error listening to study_rooms collection:', err);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.error('Error initializing study_rooms snapshot:', e);
+    }
+  }, []);
+
+  // Auto-detect joinRoom query parameter on mount or when rooms update
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const targetRoomId = params.get('joinRoom') || params.get('room') || params.get('joinGroup');
+    if (targetRoomId && !activeRoom) {
+      let matchedRoom = rooms.find(r => r.id === targetRoomId || r.id.toLowerCase() === targetRoomId.toLowerCase());
+      if (matchedRoom) {
+        handleJoinRoomClick(matchedRoom);
+      } else {
+        getDoc(doc(db, 'study_rooms', targetRoomId)).then((docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            const pwd = data.pin || data.password || '';
+            const fetchedRoom: StudyRoom = {
+              id: docSnap.id,
+              title: data.title || 'Live Study Room',
+              subject: data.subject || 'General Study',
+              activeMembers: data.activeMembers || 1,
+              maxMembers: data.maxMembers || 15,
+              description: data.description || 'Student focus room',
+              tags: data.tags || [data.subject || 'Study Room'],
+              hostName: data.hostName || 'Scholar',
+              pin: pwd,
+              password: pwd,
+              hasPassword: Boolean(pwd)
+            };
+            handleJoinRoomClick(fetchedRoom);
+          }
+        }).catch(err => console.warn('Error fetching joinRoom param:', err));
+      }
+    }
+  }, [rooms]);
+
+  const handleCreateRoomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createTitle.trim()) {
+      onShowNotification('Please enter a room title', 'error');
+      return;
+    }
+
+    const secretPin = createPassword.trim();
+    const newRoomData = {
+      title: createTitle.trim(),
+      subject: createSubject.trim() || 'General Study',
+      activeMembers: 1,
+      maxMembers: 15,
+      description: createDescription.trim() || 'Custom student focus room',
+      tags: [createSubject.trim() || 'General', 'Student Room'],
+      hostName: userProfile?.fullName || 'Scholar',
+      pin: secretPin,
+      password: secretPin,
+      hasPassword: Boolean(secretPin),
+      createdAt: serverTimestamp()
+    };
+
+    try {
+      const docRef = await addDoc(collection(db, 'study_rooms'), newRoomData);
+      const createdRoom: StudyRoom = {
+        id: docRef.id,
+        ...newRoomData
+      };
+      setActiveRoom(createdRoom);
+      onShowNotification(`Created and joined "${createdRoom.title}"!`, 'success');
+    } catch (err) {
+      console.error('Error creating study room in Firestore:', err);
+      const fallbackRoom: StudyRoom = {
+        id: 'custom_room_' + Date.now(),
+        ...newRoomData
+      };
+      setRooms(prev => [fallbackRoom, ...prev]);
+      setActiveRoom(fallbackRoom);
+      onShowNotification(`Created and joined "${fallbackRoom.title}"!`, 'success');
+    }
+
+    setIsCreateModalOpen(false);
+    setCreateTitle('');
+    setCreateDescription('');
+    setCreatePassword('');
+  };
+
+  const handleJoinRoomClick = (room: StudyRoom) => {
+    const requiredPin = room.pin || room.password;
+    if (room.hasPassword || Boolean(requiredPin)) {
+      setPasswordPromptRoom(room);
+      setEnteredPassword('');
+    } else {
+      setActiveRoom(room);
+      onShowNotification(`Joined "${room.title}"! Happy studying.`, 'success');
+    }
+  };
+
+  const handleConfirmRoomPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordPromptRoom) return;
+
+    const targetPin = passwordPromptRoom.pin || passwordPromptRoom.password || '';
+    if (enteredPassword.trim() === targetPin) {
+      setActiveRoom(passwordPromptRoom);
+      setShowUnlockEffect(true);
+      onShowNotification(`PIN verified! Joined "${passwordPromptRoom.title}".`, 'success');
+      setPasswordPromptRoom(null);
+      setEnteredPassword('');
+    } else {
+      onShowNotification('Incorrect room password/PIN! Please try again.', 'error');
+    }
+  };
+
+  const handleJoinViaLinkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    let targetId = inputRoomLink.trim();
+    if (!targetId) {
+      onShowNotification('Please enter or paste a valid room link or Room ID', 'error');
+      return;
+    }
+
+    // Extract room ID if user pasted a full URL
+    if (targetId.includes('room=')) {
+      const match = targetId.match(/[?&]room=([^&]+)/);
+      if (match) targetId = match[1];
+    } else if (targetId.includes('/room/')) {
+      targetId = targetId.split('/room/').pop()?.split('?')[0] || targetId;
+    }
+
+    setIsSearchingLink(true);
+
+    try {
+      let roomToJoin = rooms.find(r => r.id === targetId || r.id.toLowerCase() === targetId.toLowerCase());
+
+      if (!roomToJoin) {
+        // Fetch room directly from Firestore by ID if not in active state array
+        const docSnap = await getDoc(doc(db, 'study_rooms', targetId));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const pwd = data.pin || data.password || '';
+          roomToJoin = {
+            id: docSnap.id,
+            title: data.title || 'Live Study Room',
+            subject: data.subject || 'General Study',
+            activeMembers: data.activeMembers || 1,
+            maxMembers: data.maxMembers || 15,
+            description: data.description || 'Student focus room',
+            tags: data.tags || [data.subject || 'Study Room'],
+            hostName: data.hostName || 'Scholar',
+            pin: pwd,
+            password: pwd,
+            hasPassword: Boolean(pwd)
+          };
+        }
+      }
+
+      if (!roomToJoin) {
+        onShowNotification('Study room not found! Please check the link or room ID.', 'error');
+        setIsSearchingLink(false);
+        return;
+      }
+
+      // Check for PIN requirement
+      const targetPin = roomToJoin.pin || roomToJoin.password || '';
+      const isProtected = roomToJoin.hasPassword || Boolean(targetPin);
+      if (isProtected) {
+        if (!linkPassword.trim()) {
+          onShowNotification('This room is password-protected. Please enter the password/PIN.', 'error');
+          setIsSearchingLink(false);
+          return;
+        }
+        if (linkPassword.trim() !== targetPin) {
+          onShowNotification('Incorrect room password/PIN! Access denied.', 'error');
+          setIsSearchingLink(false);
+          return;
+        }
+      }
+
+      // Successfully join room
+      setActiveRoom(roomToJoin);
+      if (isProtected) {
+        setShowUnlockEffect(true);
+      }
+      onShowNotification(`Successfully joined "${roomToJoin.title}" via link!`, 'success');
+      setIsJoinLinkModalOpen(false);
+      setInputRoomLink('');
+      setLinkPassword('');
+    } catch (err) {
+      console.error('Error joining room via link:', err);
+      onShowNotification('Failed to join room. Please check connection.', 'error');
+    } finally {
+      setIsSearchingLink(false);
+    }
+  };
+
+  // URL Query Param Auto-Detection on page load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlRoomId = params.get('room');
+    if (urlRoomId && rooms.length > 0) {
+      const targetRoom = rooms.find(r => r.id === urlRoomId);
+      if (targetRoom) {
+        const targetPin = targetRoom.pin || targetRoom.password;
+        if (targetRoom.hasPassword || Boolean(targetPin)) {
+          setPasswordPromptRoom(targetRoom);
+        } else {
+          setActiveRoom(targetRoom);
+          onShowNotification(`Joined "${targetRoom.title}" from link!`, 'success');
+        }
+      }
+    }
+  }, [rooms]);
+
   // Timer Effect
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -201,7 +471,27 @@ export function StudyGroupView({ userProfile, onShowNotification }: StudyGroupVi
             </p>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-3.5 py-2 bg-[#39FF14]/10 hover:bg-[#39FF14]/20 border border-[#39FF14]/30 text-[#39FF14] text-xs font-mono font-bold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-lg shadow-[#39FF14]/10"
+            >
+              <Plus size={14} />
+              <span>Create Custom Room</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setIsJoinLinkModalOpen(true);
+                setInputRoomLink('');
+                setLinkPassword('');
+              }}
+              className="px-3.5 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-lg shadow-cyan-500/10"
+            >
+              <LinkIcon size={14} />
+              <span>Join via Room Link</span>
+            </button>
+
             <div className="px-3 py-2 bg-white/5 border border-white/10 rounded-xl flex items-center space-x-2 text-xs font-mono text-cyan-400">
               <Flame size={16} className="text-cyan-400" />
               <span>{completedPomodoros} Sprints Today</span>
@@ -232,8 +522,9 @@ export function StudyGroupView({ userProfile, onShowNotification }: StudyGroupVi
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20">
-                          {room.subject}
+                        <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 flex items-center space-x-1">
+                          {(room.hasPassword || room.password) && <Lock size={10} className="text-amber-400 mr-1" />}
+                          <span>{room.subject}</span>
                         </span>
                         <span className="text-[10px] font-mono text-slate-400 flex items-center space-x-1">
                           <Users size={12} className="text-emerald-400" />
@@ -258,16 +549,28 @@ export function StudyGroupView({ userProfile, onShowNotification }: StudyGroupVi
                         ))}
                       </div>
 
-                      <button
-                        onClick={() => {
-                          setActiveRoom(room);
-                          onShowNotification(`Joined "${room.title}"! Happy studying.`, 'success');
-                        }}
-                        className="w-full py-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-mono text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-2"
-                      >
-                        <UserCheck size={14} />
-                        <span>Join Study Room</span>
-                      </button>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleJoinRoomClick(room)}
+                          className="flex-1 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-mono text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          {(room.hasPassword || room.password) ? <Lock size={14} className="text-amber-400" /> : <UserCheck size={14} />}
+                          <span>{(room.hasPassword || room.password) ? 'Join Protected Room' : 'Join Study Room'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const roomUrl = `${window.location.origin}${window.location.pathname}?room=${room.id}`;
+                            navigator.clipboard.writeText(roomUrl);
+                            onShowNotification('Room link copied to clipboard!', 'success');
+                          }}
+                          title="Copy Room Link"
+                          className="p-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-400 rounded-xl border border-white/10 transition-colors cursor-pointer"
+                        >
+                          <Copy size={14} />
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 ))}
@@ -275,19 +578,77 @@ export function StudyGroupView({ userProfile, onShowNotification }: StudyGroupVi
             </div>
           ) : (
             /* Joined Room Chat & Shared Task Workspace */
-            <div className="space-y-4">
+            <motion.div
+              key={activeRoom.id}
+              initial={{ opacity: 0, scale: 0.98, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="space-y-4"
+            >
+              {/* Subtle Entry Unlock Banner for Protected Rooms */}
+              <AnimatePresence>
+                {(showUnlockEffect || activeRoom.hasPassword || activeRoom.password) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.97 }}
+                    transition={{ duration: 0.35 }}
+                    className="relative overflow-hidden p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/20 border border-emerald-500/40 shadow-xl shadow-emerald-500/10 flex items-center justify-between text-xs font-mono text-emerald-300"
+                  >
+                    <div className="absolute inset-0 bg-emerald-400/5 animate-pulse pointer-events-none" />
+                    <div className="flex items-center space-x-3 z-10">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shrink-0 shadow-inner">
+                        <Unlock size={16} className="animate-bounce" />
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center space-x-1.5 font-bold text-white">
+                          <span>Access Unlocked</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 uppercase">PIN Verified</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-200/90 font-sans">
+                          Welcome to <strong>{activeRoom.title}</strong>! Security credentials authenticated.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowUnlockEffect(false)}
+                      className="p-1.5 text-emerald-400 hover:text-white rounded-lg bg-white/5 hover:bg-white/10 transition-colors z-10 cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Joined Room Header */}
               <div className="glass-panel p-4 rounded-2xl border border-cyan-500/30 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider">{activeRoom.subject} • Host: {activeRoom.hostName}</span>
-                  <h3 className="text-sm font-bold text-white">{activeRoom.title}</h3>
+                  <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+                    <span>{activeRoom.title}</span>
+                    {(activeRoom.hasPassword || activeRoom.password) && <Lock size={12} className="text-amber-400" />}
+                  </h3>
                 </div>
-                <button
-                  onClick={() => setActiveRoom(null)}
-                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-slate-300 font-mono text-xs rounded-xl border border-white/10 cursor-pointer"
-                >
-                  Leave Room
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => {
+                      const inviteUrl = `${window.location.origin}${window.location.pathname}?joinRoom=${activeRoom.id}`;
+                      navigator.clipboard.writeText(inviteUrl);
+                      onShowNotification(`Invite link for "${activeRoom.title}" copied to clipboard!`, 'success');
+                    }}
+                    className="px-3.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 font-mono text-xs font-bold rounded-xl border border-cyan-500/30 flex items-center space-x-1.5 cursor-pointer transition-all shadow-md hover:shadow-cyan-500/20"
+                  >
+                    <LinkIcon size={13} />
+                    <span>Copy Invite Link</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveRoom(null)}
+                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-slate-300 font-mono text-xs rounded-xl border border-white/10 cursor-pointer"
+                  >
+                    Leave Room
+                  </button>
+                </div>
               </div>
 
               {/* Room Live Chat & Session Tasks */}
@@ -368,7 +729,7 @@ export function StudyGroupView({ userProfile, onShowNotification }: StudyGroupVi
                   </form>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
         </div>
 
@@ -466,6 +827,246 @@ export function StudyGroupView({ userProfile, onShowNotification }: StudyGroupVi
           </div>
         </div>
       </div>
+
+      {/* CREATE ROOM MODAL */}
+      <AnimatePresence>
+        {isCreateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-slate-900 border border-cyan-500/40 rounded-2xl p-6 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center space-x-2 text-cyan-400 font-mono font-bold text-sm">
+                  <Plus size={16} />
+                  <span>Create Custom Live Study Room</span>
+                </div>
+                <button
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg bg-white/5"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateRoomSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1">Room Title *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. ⚡ Physics Vector Marathon & Focus"
+                    value={createTitle}
+                    onChange={(e) => setCreateTitle(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500 font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1">Subject / Tag</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. HSC Science, BUET Math, Programming"
+                    value={createSubject}
+                    onChange={(e) => setCreateSubject(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500 font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1">Description / Goal</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Describe session goals..."
+                    value={createDescription}
+                    onChange={(e) => setCreateDescription(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500 font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1 flex items-center justify-between">
+                    <span className="flex items-center space-x-1">
+                      <Lock size={12} className="text-amber-400" />
+                      <span>Optional Room Password / PIN</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal">(Leave empty for public)</span>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Set secret PIN (optional)"
+                    value={createPassword}
+                    onChange={(e) => setCreatePassword(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                </div>
+
+                <div className="pt-2 flex justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(false)}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-mono font-bold rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-mono font-bold rounded-xl shadow-lg shadow-cyan-500/20"
+                  >
+                    Launch Room
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* JOIN PASSWORD PROMPT MODAL */}
+      <AnimatePresence>
+        {passwordPromptRoom && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-sm bg-slate-900 border border-amber-500/40 rounded-2xl p-6 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center space-x-2 text-amber-400 font-mono font-bold text-sm">
+                  <Lock size={16} />
+                  <span>Private Study Room Locked</span>
+                </div>
+                <button
+                  onClick={() => setPasswordPromptRoom(null)}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg bg-white/5"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-white">{passwordPromptRoom.title}</h4>
+                <p className="text-[11px] text-slate-400 font-mono">Host: {passwordPromptRoom.hostName}</p>
+              </div>
+
+              <form onSubmit={handleConfirmRoomPassword} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1">Enter Password / PIN</label>
+                  <input
+                    type="password"
+                    autoFocus
+                    required
+                    placeholder="Enter room password..."
+                    value={enteredPassword}
+                    onChange={(e) => setEnteredPassword(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-amber-500/30 rounded-xl text-white text-xs focus:outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setPasswordPromptRoom(null)}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-mono font-bold rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-mono font-bold rounded-xl shadow-lg shadow-amber-500/20"
+                  >
+                    Unlock & Join
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* JOIN VIA ROOM LINK MODAL */}
+      <AnimatePresence>
+        {isJoinLinkModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-slate-900 border border-cyan-500/40 rounded-2xl p-6 shadow-2xl space-y-4 relative"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center space-x-2 text-cyan-400 font-mono font-bold text-sm">
+                  <LinkIcon size={18} />
+                  <span>Join Study Room via Link</span>
+                </div>
+                <button
+                  onClick={() => setIsJoinLinkModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg bg-white/5 cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleJoinViaLinkSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1">
+                    Paste Study Room Link or Room ID *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    placeholder="e.g. https://.../?room=xyz123 or room ID"
+                    value={inputRoomLink}
+                    onChange={(e) => setInputRoomLink(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-950 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1 flex items-center justify-between">
+                    <span className="flex items-center space-x-1">
+                      <Lock size={12} className="text-amber-400" />
+                      <span>Room Password / PIN</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal">(Required if room is protected)</span>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Enter room PIN (if protected)"
+                    value={linkPassword}
+                    onChange={(e) => setLinkPassword(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-950 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                </div>
+
+                <div className="p-3 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-[11px] text-cyan-300 font-sans leading-relaxed">
+                  💡 Enter the shared room link or room ID provided by the host. If the room is password-protected, enter its PIN to join instantly.
+                </div>
+
+                <div className="pt-2 flex justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsJoinLinkModalOpen(false)}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-mono font-bold rounded-xl cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSearchingLink}
+                    className="px-5 py-2 bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-mono font-bold rounded-xl shadow-lg shadow-cyan-500/20 cursor-pointer disabled:opacity-50 flex items-center space-x-1.5"
+                  >
+                    {isSearchingLink ? <span>Verifying...</span> : <span>Join Room Now</span>}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

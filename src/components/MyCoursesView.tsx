@@ -449,13 +449,15 @@ export function MyCoursesView({
               </div>
 
               <button
-                onClick={() => {
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
                   setSelectedCourseForRefund(course);
                   setIsRefundModalOpen(true);
                 }}
-                className="text-rose-500 hover:text-rose-400 text-[9px] font-bold uppercase tracking-widest mt-1 block w-full text-center"
+                className="w-full py-2 px-3 mt-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 hover:text-rose-300 text-[10px] font-mono font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
               >
-                Request Refund (রিফান্ড আবেদন)
+                <span>REQUEST REFUND (রিফান্ড আবেদন)</span>
               </button>
 
             </motion.div>

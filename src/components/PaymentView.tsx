@@ -168,6 +168,13 @@ export function PaymentView({
 
   const selectedMethod = paymentMethods.find(m => m.id === selectedMethodId);
 
+  // Bug #8: Auto-disable wallet toggle if balance is 0
+  useEffect(() => {
+    if (userWalletBalance <= 0) {
+      setUseWallet(false);
+    }
+  }, [userWalletBalance]);
+
   // Mobile number input handler - automatically ensures leading "0"
   const handleWalletChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value.replace(/\D/g, '');
@@ -752,20 +759,30 @@ export function PaymentView({
             </div>
 
             {/* Toggle Switch */}
-            <div className="flex items-center space-x-2">
-              <span className="text-[10px] font-mono text-slate-400 uppercase">
-                {useWallet ? 'ON' : 'OFF'}
-              </span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={useWallet} 
-                  onChange={(e) => setUseWallet(e.target.checked)}
-                  disabled={userWalletBalance <= 0}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#39FF14]"></div>
-              </label>
+            <div className="flex flex-col items-end">
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] font-mono text-slate-400 uppercase">
+                  {useWallet ? 'ON' : 'OFF'}
+                </span>
+                <label className={`relative inline-flex items-center ${userWalletBalance <= 0 ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+                  <input 
+                    type="checkbox" 
+                    checked={useWallet} 
+                    onChange={(e) => {
+                      if (userWalletBalance <= 0) return;
+                      setUseWallet(e.target.checked);
+                    }}
+                    disabled={userWalletBalance <= 0}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#39FF14]"></div>
+                </label>
+              </div>
+              {userWalletBalance <= 0 && (
+                <span className="text-[9px] font-mono text-red-400 mt-1 font-semibold">
+                  ⚠️ Insufficient Balance
+                </span>
+              )}
             </div>
           </div>
 

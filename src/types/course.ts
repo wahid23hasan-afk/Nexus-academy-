@@ -120,6 +120,9 @@ export interface Coupon {
   isActive: boolean;
   expiryDate: string; // ISO date or simple string "YYYY-MM-DD"
   description: string;
+  ownerUserId?: string;
+  userEmail?: string;
+  isSecret?: boolean;
 }
 
 export interface Offer {

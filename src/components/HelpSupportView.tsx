@@ -4,7 +4,7 @@ import {
   Clock, Plus, CheckCircle2, AlertCircle, ShieldAlert, User, Headset,
   RefreshCw, ChevronDown, Sparkles, Filter, Search, CreditCard,
   GraduationCap, Video, Award, CheckCheck, X, LifeBuoy, AlertTriangle,
-  ArrowRight, ShieldCheck, Tag
+  ArrowRight, ShieldCheck, Tag, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -39,6 +39,22 @@ export interface SupportTicket {
   createdAt: string;
   updatedAt?: any;
   replies?: SupportReply[];
+}
+
+export interface RefundRequestItem {
+  id: string;
+  userId: string;
+  userName?: string;
+  userEmail?: string;
+  courseId?: string;
+  courseTitle: string;
+  amount: number;
+  reason: string;
+  notes?: string;
+  bkashNumber: string;
+  status: 'pending' | 'approved' | 'rejected';
+  adminNote?: string;
+  createdAt: string;
 }
 
 interface HelpSupportViewProps {
@@ -81,10 +97,14 @@ export const CATEGORY_INFO: Record<TicketCategory, { labelEn: string; labelBn: s
 };
 
 export const HelpSupportView: React.FC<HelpSupportViewProps> = ({ onBack, userProfile }) => {
-  const [activeTab, setActiveTab] = useState<'support' | 'faqs'>('support');
+  const [activeTab, setActiveTab] = useState<'support' | 'refunds' | 'faqs'>('support');
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
+
+  // Refund Requests tracking state
+  const [refundRequests, setRefundRequests] = useState<RefundRequestItem[]>([]);
+  const [loadingRefunds, setLoadingRefunds] = useState<boolean>(true);
   
   // Search and Filter states
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -181,6 +201,55 @@ export const HelpSupportView: React.FC<HelpSupportViewProps> = ({ onBack, userPr
 
     return () => unsubscribe();
   }, [currentUserId, selectedTicket?.id]);
+
+  // Real-time listener for user's refund requests
+  useEffect(() => {
+    if (!currentUserId && !currentUserEmail) {
+      setLoadingRefunds(false);
+      return;
+    }
+
+    setLoadingRefunds(true);
+    const q = query(collection(db, 'refund_requests'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: RefundRequestItem[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const isUserMatch = 
+          (data.userId && data.userId === currentUserId) ||
+          (data.userEmail && currentUserEmail && data.userEmail.toLowerCase() === currentUserEmail.toLowerCase()) ||
+          (data.userId && userProfile?.username && data.userId === userProfile.username);
+
+        if (isUserMatch) {
+          list.push({
+            id: docSnap.id,
+            userId: data.userId || currentUserId,
+            userName: data.userName || currentUserName,
+            userEmail: data.userEmail || currentUserEmail,
+            courseId: data.courseId || '',
+            courseTitle: data.courseTitle || 'Course Purchase',
+            amount: data.amount || 0,
+            reason: data.reason || 'General Refund',
+            notes: data.notes || '',
+            bkashNumber: data.bkashNumber || '',
+            status: data.status === 'approved' ? 'approved' : data.status === 'rejected' ? 'rejected' : 'pending',
+            adminNote: data.adminNote || '',
+            createdAt: data.createdAt || new Date().toISOString()
+          });
+        }
+      });
+
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setRefundRequests(list);
+      setLoadingRefunds(false);
+    }, (err) => {
+      console.error('Error listening to refund_requests in HelpSupportView:', err);
+      setLoadingRefunds(false);
+    });
+
+    return () => unsubscribe();
+  }, [currentUserId, currentUserEmail, userProfile?.username, currentUserName]);
 
   // Submit new support ticket
   const handleCreateTicket = async (e: React.FormEvent) => {
@@ -524,6 +593,26 @@ export const HelpSupportView: React.FC<HelpSupportViewProps> = ({ onBack, userPr
         <button
           onClick={() => {
             soundFxService.playClick();
+            setActiveTab('refunds');
+            setSelectedTicket(null);
+            setIsCreatingTicket(false);
+          }}
+          className={`flex-1 py-2 rounded-xl text-xs font-mono font-bold transition-all flex items-center justify-center space-x-2 cursor-pointer relative ${
+            activeTab === 'refunds'
+              ? 'bg-rose-500/15 border border-rose-500/40 text-rose-400'
+              : 'bg-white/5 border border-white/5 text-slate-400 hover:text-white'
+          }`}
+        >
+          <RotateCcw size={14} />
+          <span>Refund Status ({refundRequests.length})</span>
+          {refundRequests.some(r => r.status === 'pending') && (
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-1" />
+          )}
+        </button>
+
+        <button
+          onClick={() => {
+            soundFxService.playClick();
             setActiveTab('faqs');
             setSelectedTicket(null);
             setIsCreatingTicket(false);
@@ -535,7 +624,7 @@ export const HelpSupportView: React.FC<HelpSupportViewProps> = ({ onBack, userPr
           }`}
         >
           <BookOpen size={14} />
-          <span>Help & FAQs (প্রশ্নোত্তর)</span>
+          <span>Help & FAQs</span>
         </button>
       </div>
 
@@ -1066,7 +1155,149 @@ export const HelpSupportView: React.FC<HelpSupportViewProps> = ({ onBack, userPr
         </div>
       )}
 
-      {/* TAB 2: FAQS AND KNOWLEDGE BASE */}
+      {/* TAB 2: REFUND APPLICATIONS & STATUS TRACKING */}
+      {activeTab === 'refunds' && (
+        <div className="space-y-4 font-sans">
+          <div className="p-4 rounded-2xl bg-slate-950 border border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div>
+              <h3 className="text-xs font-mono font-bold text-white uppercase flex items-center space-x-2">
+                <RotateCcw size={15} className="text-rose-400" />
+                <span>My Course Refund Applications (রিফান্ড আবেদনসমূহ)</span>
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Real-time tracking of refund requests submitted to the admin team.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2 font-mono text-[10px]">
+              <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold">
+                {refundRequests.filter(r => r.status === 'pending').length} Pending
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                {refundRequests.filter(r => r.status === 'approved').length} Approved
+              </span>
+            </div>
+          </div>
+
+          {loadingRefunds ? (
+            <div className="text-center py-12 text-slate-400 font-mono text-xs flex flex-col items-center justify-center space-y-2">
+              <RefreshCw size={20} className="animate-spin text-rose-400" />
+              <span>Fetching your refund application records...</span>
+            </div>
+          ) : refundRequests.length === 0 ? (
+            <div className="p-8 text-center bg-slate-950 border border-white/10 rounded-2xl space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
+                <RotateCcw size={24} />
+              </div>
+              <div>
+                <h3 className="text-sm font-mono font-bold text-white">No Refund Requests Submitted</h3>
+                <p className="text-xs text-slate-400 font-sans mt-1 max-w-sm mx-auto">
+                  You have not submitted any refund applications. If you need a refund for a course purchase, go to your course page or active enrollments and click "Request Refund".
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {refundRequests.map((req) => (
+                <motion.div
+                  key={req.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-2xl bg-slate-950 border border-white/10 hover:border-white/20 transition-all space-y-3 shadow-md"
+                >
+                  {/* Top Header */}
+                  <div className="flex flex-wrap items-start justify-between gap-2 border-b border-white/5 pb-3">
+                    <div>
+                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Course Title</span>
+                      <h4 className="text-sm font-bold text-white mt-0.5">{req.courseTitle}</h4>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <div className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-bold text-xs">
+                        ৳{req.amount.toLocaleString()}
+                      </div>
+
+                      {req.status === 'approved' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 flex items-center space-x-1.5 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                          <CheckCircle2 size={13} />
+                          <span>APPROVED (অনুমোদিত)</span>
+                        </span>
+                      )}
+
+                      {req.status === 'rejected' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-rose-500/15 text-rose-400 border border-rose-500/40 flex items-center space-x-1.5">
+                          <X size={13} />
+                          <span>REJECTED (বাতিল)</span>
+                        </span>
+                      )}
+
+                      {req.status === 'pending' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/40 flex items-center space-x-1.5 animate-pulse">
+                          <Clock size={13} />
+                          <span>PENDING (বিবেচনাধীন)</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Grid Info */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                      <span className="text-[10px] text-slate-400 uppercase block">Payout Account (bKash/Nagad)</span>
+                      <span className="font-bold text-white">{req.bkashNumber || 'N/A'}</span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                      <span className="text-[10px] text-slate-400 uppercase block">Selected Reason</span>
+                      <span className="text-slate-200 font-sans">{req.reason}</span>
+                    </div>
+                  </div>
+
+                  {req.notes && (
+                    <div className="text-xs p-3 rounded-xl bg-white/[0.02] border border-white/5 text-slate-300">
+                      <strong className="text-slate-400 font-mono text-[10px] uppercase block mb-0.5">Student Notes:</strong>
+                      <span>{req.notes}</span>
+                    </div>
+                  )}
+
+                  {/* Admin Feedback / Note */}
+                  {req.adminNote && (
+                    <div className={`p-3 rounded-xl text-xs border ${
+                      req.status === 'approved' 
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200' 
+                        : req.status === 'rejected'
+                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                    }`}>
+                      <strong className="font-mono text-[10px] uppercase block mb-0.5 flex items-center space-x-1">
+                        <ShieldCheck size={12} />
+                        <span>Admin Note / এডমিন বার্তা:</span>
+                      </strong>
+                      <span>{req.adminNote}</span>
+                    </div>
+                  )}
+
+                  {/* Bottom Footer Info */}
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-2 border-t border-white/5">
+                    <span>Submitted: {new Date(req.createdAt).toLocaleString()}</span>
+                    {req.status === 'pending' && (
+                      <span className="text-amber-400 font-bold">⚡ Under review by Admin Team</span>
+                    )}
+                    {req.status === 'approved' && (
+                      <span className="text-emerald-400 font-bold">✓ Disbursement Processed</span>
+                    )}
+                    {req.status === 'rejected' && (
+                      <span className="text-rose-400 font-bold">✕ Request Declined</span>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: FAQS AND KNOWLEDGE BASE */}
       {activeTab === 'faqs' && (
         <div className="space-y-4">
           <div className="bg-gradient-to-r from-blue-950/60 to-purple-950/60 border border-white/10 rounded-2xl p-5 space-y-3">

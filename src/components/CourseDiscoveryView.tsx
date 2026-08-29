@@ -41,13 +41,15 @@ import {
   Zap,
   Headset,
   LifeBuoy,
-  HelpCircle
+  HelpCircle,
+  Smartphone,
+  Download
 } from 'lucide-react';
 import { Course, Banner } from '../types/course';
 import { courseService } from '../services/courseService';
 import { progressService, CourseProgressInfo, LessonProgressInfo } from '../services/progressService';
 import { auth, db } from '../services/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 
 import { CourseDetailsView } from './CourseDetailsView';
 import { EnrollmentConfirmationView } from './EnrollmentConfirmationView';
@@ -74,6 +76,7 @@ import { PrivacySecurityView } from './PrivacySecurityView';
 import { HelpSupportView } from './HelpSupportView';
 import { CodeSandboxView } from './CodeSandboxView';
 import { PaymentHistoryView } from './PaymentHistoryView';
+import { DownloadAppModal } from './DownloadAppModal';
 
 import { notificationService, getSafeTimestamp } from '../services/notificationService';
 import { triggerMilestoneToast } from '../services/milestoneService';
@@ -165,6 +168,9 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
   const [currentSlide, setCurrentSlide] = useState<number>(0);
   const slideTimer = useRef<NodeJS.Timeout | null>(null);
 
+  // Modals state
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
+
   // Auto-hiding Bottom Bar & AI FAB on scroll
   const [isBarsVisible, setIsBarsVisible] = useState<boolean>(true);
   const lastScrollYRef = useRef<number>(0);
@@ -207,6 +213,42 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
 
   // Pagination/Infinite Scroll State
   const [visibleCount, setVisibleCount] = useState<number>(4);
+
+  // Dynamic categories state for Bug #8 & Bug #10
+  const [dynamicCategories, setDynamicCategories] = useState<string[]>(
+    CATEGORIES.filter((c) => c !== 'Sandbox' && c !== 'Flashcards')
+  );
+
+  useEffect(() => {
+    const unsubCat = onSnapshot(
+      collection(db, 'categories'),
+      (snap) => {
+        if (!snap.empty) {
+          const items = snap.docs.map((doc) => doc.data().name || doc.data().title || doc.id).filter(Boolean);
+          const filtered = Array.from(new Set(['All', ...items])).filter((c) => c !== 'Sandbox' && c !== 'Flashcards');
+          setDynamicCategories(filtered);
+        }
+      },
+      (err) => console.warn('Categories listener notice:', err)
+    );
+
+    const unsubNiches = onSnapshot(
+      doc(db, 'appSettings', 'niches'),
+      (snap) => {
+        if (snap.exists() && snap.data().items && Array.isArray(snap.data().items)) {
+          const items = snap.data().items.filter(Boolean);
+          const filtered = Array.from(new Set(['All', ...items])).filter((c) => c !== 'Sandbox' && c !== 'Flashcards');
+          setDynamicCategories(filtered);
+        }
+      },
+      (err) => console.warn('Niches listener notice:', err)
+    );
+
+    return () => {
+      unsubCat();
+      unsubNiches();
+    };
+  }, []);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
 
   const handleLoadMorePrograms = () => {
@@ -258,6 +300,12 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
     const enrollments = localStorage.getItem('nexus_enrollments');
     if (enrollments) {
       setEnrolledIds(JSON.parse(enrollments));
+    }
+
+    // Check for joinRoom URL parameter to switch directly to study-group tab
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('joinRoom') || params.get('room') || params.get('joinGroup')) {
+      setActiveTab('study-group');
     }
 
     // Run primary Firestore seed & load routines
@@ -1003,8 +1051,21 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           </div>
         </div>
 
-        {/* Right: Streak Counter, Notification and 3-Line Quest/Rewards Menu Button */}
+        {/* Right: Download App, Streak Counter, Notification and 3-Line Quest/Rewards Menu Button */}
         <div className="flex items-center space-x-1.5 shrink-0 pl-1 relative">
+          {/* Glowing Download App Button */}
+          <button
+            onClick={() => {
+              soundFxService.playClick();
+              setIsDownloadModalOpen(true);
+            }}
+            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-[#39FF14]/20 via-emerald-500/20 to-[#39FF14]/10 border border-[#39FF14]/50 text-[#39FF14] font-mono text-[11px] font-bold shrink-0 shadow-[0_0_12px_rgba(57,255,20,0.25)] hover:bg-[#39FF14]/30 hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all cursor-pointer select-none"
+            title="Download App / Install PWA"
+          >
+            <Smartphone size={13} className="text-[#39FF14] animate-bounce" />
+            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider">App</span>
+          </button>
+
           {/* Daily Streak Counter Header Pill */}
           <button
             onClick={() => {
@@ -1089,6 +1150,22 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
                     </div>
 
                     <div className="space-y-1 max-h-[55vh] overflow-y-auto pr-1 no-scrollbar">
+                      {/* Download App / PWA Install */}
+                      <button
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          soundFxService.playClick();
+                          setIsDownloadModalOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-[#39FF14]/15 hover:bg-[#39FF14]/25 border border-[#39FF14]/40 text-[#39FF14] transition-all cursor-pointer text-left shadow-sm"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Smartphone size={15} className="text-[#39FF14]" />
+                          <span className="text-xs font-bold text-white">Download Mobile App</span>
+                        </div>
+                        <span className="text-[9px] font-mono text-[#39FF14] bg-[#39FF14]/20 px-1.5 py-0.2 rounded font-bold">INSTALL</span>
+                      </button>
+
                       {/* XP Store */}
                       <button
                         onClick={() => {
@@ -1348,16 +1425,6 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         </button>
 
         <button
-          onClick={() => setActiveTab('flashcards')}
-          className={`px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider whitespace-nowrap flex items-center space-x-1.5 transition-all cursor-pointer ${
-            activeTab === 'flashcards' ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/20' : 'text-slate-400 hover:text-white bg-white/5'
-          }`}
-        >
-          <Brain size={12} />
-          <span>Flashcards</span>
-        </button>
-
-        <button
           onClick={() => setActiveTab('study-group')}
           className={`px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider whitespace-nowrap flex items-center space-x-1.5 transition-all cursor-pointer ${
             activeTab === 'study-group' ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20' : 'text-slate-400 hover:text-white bg-white/5'
@@ -1365,16 +1432,6 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         >
           <Users size={12} />
           <span>Study Room</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('sandbox')}
-          className={`px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider whitespace-nowrap flex items-center space-x-1.5 transition-all cursor-pointer ${
-            activeTab === 'sandbox' ? 'bg-purple-500 text-black shadow-md shadow-purple-500/20' : 'text-slate-400 hover:text-white bg-white/5'
-          }`}
-        >
-          <Code2 size={12} />
-          <span>Sandbox</span>
         </button>
 
         <button
@@ -1729,7 +1786,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
             <div className="h-3 bg-slate-800 rounded w-2/3" />
           </div>
         ) : banners.length > 0 ? (
-          <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-white/10 group shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="relative z-0 isolate w-full h-44 rounded-2xl overflow-hidden border border-white/10 group shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
             
             {/* Banner Slides */}
             <AnimatePresence mode="wait">
@@ -1778,7 +1835,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
             </AnimatePresence>
 
             {/* Slider Dots */}
-            <div className="absolute top-4 right-4 flex space-x-1.5 z-25 bg-black/40 px-2 py-1 rounded-full backdrop-blur-md border border-white/5">
+            <div className="absolute top-4 right-4 flex space-x-1.5 z-10 bg-black/40 px-2 py-1 rounded-full backdrop-blur-md border border-white/5">
               {banners.map((_, idx) => (
                 <button
                   key={idx}
@@ -1821,7 +1878,7 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
         
         {/* Horizontal scroll container with premium chips */}
         <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 scrollbar-none snap-x touch-pan-x">
-          {CATEGORIES.map((cat) => {
+          {dynamicCategories.map((cat) => {
             const isActive = selectedCategory === cat;
             return (
               <button
@@ -2368,6 +2425,12 @@ export function CourseDiscoveryView({ userProfile, onLogout, onShowNotification 
           </button>
         </div>
       </div>
+
+      {/* Download App / PWA Install Modal */}
+      <DownloadAppModal
+        isOpen={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+      />
 
       {/* Notification and Preferences Sidebar Drawer */}
       <NotificationCenter

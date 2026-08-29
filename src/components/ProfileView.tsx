@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   User, Award, Shield, CheckCircle2, ChevronRight, LogOut, Settings, HelpCircle, 
   UserCheck, Flame, Trophy, Share2, Mail, Compass, Star, ShieldCheck, MessageSquare, 
-  Clock, CreditCard, XCircle, AlertTriangle, Sparkles, Check, Crown, Zap, Lock, Unlock, ShoppingBag, Edit3, X, Wallet
+  Clock, CreditCard, XCircle, AlertTriangle, Sparkles, Check, Crown, Zap, Lock, Unlock, ShoppingBag, Edit3, X, Wallet, Globe
 } from 'lucide-react';
 import { InstructorPayoutModal } from './InstructorPayoutModal';
 import { updateProfile } from 'firebase/auth';
@@ -65,9 +65,60 @@ export function ProfileView({
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState<boolean>(false);
   const [myPayoutRequests, setMyPayoutRequests] = useState<any[]>([]);
 
-  // Role check guard: ONLY show IF user.role === 'instructor' OR user.role === 'admin'
+  // Bug #1: Check if user's email matches an approved instructor in Firestore
+  const [isApprovedInstructor, setIsApprovedInstructor] = useState<boolean>(false);
+
+  // Bug #14: Language selection state
+  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'bn'>(() => {
+    return (localStorage.getItem('nexus_app_language') as 'en' | 'bn') || 'en';
+  });
+  const [isLanguageModalOpen, setIsLanguageModalOpen] = useState<boolean>(false);
+
+  // Role check guard: ONLY show IF user.role === 'instructor' OR user.role === 'admin' OR in instructors collection
   const userRole = userProfile?.role || userProfile?.userRole || (userProfile?.email === 'wahid23hasan@gmail.com' ? 'admin' : 'student');
-  const isInstructorOrAdmin = userRole === 'instructor' || userRole === 'admin' || userRole === 'super_admin' || userProfile?.email === 'wahid23hasan@gmail.com';
+  const isInstructorOrAdmin = isApprovedInstructor || userRole === 'instructor' || userRole === 'admin' || userRole === 'super_admin' || userProfile?.email === 'wahid23hasan@gmail.com';
+
+  useEffect(() => {
+    if (!userProfile?.email) return;
+    const checkInstructor = async () => {
+      try {
+        const email = userProfile.email.toLowerCase().trim();
+        const q = query(collection(db, 'instructors'), where('email', '==', email));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          setIsApprovedInstructor(true);
+        } else {
+          const allSnap = await getDocs(collection(db, 'instructors'));
+          const found = allSnap.docs.some((d) => {
+            const data = d.data();
+            const e = (data.email || data.instructorEmail || '').toLowerCase().trim();
+            return e === email;
+          });
+          if (found) setIsApprovedInstructor(true);
+        }
+      } catch (err) {
+        console.warn('Error checking approved instructor status:', err);
+      }
+    };
+    checkInstructor();
+  }, [userProfile?.email]);
+
+  const handleSelectLanguage = async (lang: 'en' | 'bn') => {
+    setSelectedLanguage(lang);
+    localStorage.setItem('nexus_app_language', lang);
+    setIsLanguageModalOpen(false);
+
+    if (userProfile?.uid) {
+      try {
+        await updateDoc(doc(db, 'users', userProfile.uid), { language: lang });
+      } catch (err) {
+        console.warn('Failed updating user language in Firestore:', err);
+      }
+    }
+
+    const label = lang === 'bn' ? 'বাংলা (BN)' : 'ENGLISH (EN)';
+    onShowNotification(`App language updated to ${label}`, 'success');
+  };
 
   // Dynamic balance calculation for instructor earnings
   const initialInstructorBalance = 12500;
@@ -910,13 +961,81 @@ export function ProfileView({
 
         {/* Language Switcher */}
         <div className="pb-8">
-            <button className="w-full flex items-center justify-center space-x-2 bg-slate-800/50 hover:bg-slate-700/50 border border-white/10 rounded-xl py-3 px-4 text-slate-200 transition-all">
-                <span className="text-xl">🇺🇸</span>
-                <span className="font-mono text-sm font-bold">ENGLISH (EN)</span>
-                <ChevronRight size={16} className="rotate-90 text-slate-500" />
+            <button 
+              onClick={() => setIsLanguageModalOpen(true)}
+              className="w-full flex items-center justify-between bg-slate-800/50 hover:bg-slate-700/50 border border-white/10 rounded-xl py-3 px-4 text-slate-200 transition-all cursor-pointer"
+            >
+                <div className="flex items-center space-x-2">
+                  <span className="text-xl">{selectedLanguage === 'bn' ? '🇧🇩' : '🇺🇸'}</span>
+                  <span className="font-mono text-sm font-bold">
+                    {selectedLanguage === 'bn' ? 'বাংলা (BN)' : 'ENGLISH (EN)'}
+                  </span>
+                </div>
+                <ChevronRight size={16} className="text-slate-500" />
             </button>
         </div>
       </div>
+
+      {/* LANGUAGE SELECTION MODAL */}
+      <AnimatePresence>
+        {isLanguageModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-sm bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <h3 className="text-sm font-mono font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                  <Globe size={16} className="text-cyan-400" />
+                  <span>Select App Language / ভাষা</span>
+                </h3>
+                <button onClick={() => setIsLanguageModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  onClick={() => handleSelectLanguage('en')}
+                  className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
+                    selectedLanguage === 'en'
+                      ? 'bg-cyan-500/20 border-cyan-500/50 text-white font-bold'
+                      : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <span className="text-2xl">🇺🇸</span>
+                    <span className="font-mono text-sm">ENGLISH (EN)</span>
+                  </div>
+                  {selectedLanguage === 'en' && <Check size={16} className="text-cyan-400" />}
+                </button>
+
+                <button
+                  onClick={() => handleSelectLanguage('bn')}
+                  className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
+                    selectedLanguage === 'bn'
+                      ? 'bg-cyan-500/20 border-cyan-500/50 text-white font-bold'
+                      : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <span className="text-2xl">🇧🇩</span>
+                    <span className="font-mono text-sm">বাংলা (BN)</span>
+                  </div>
+                  {selectedLanguage === 'bn' && <Check size={16} className="text-cyan-400" />}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* INSTRUCTOR PAYOUT WITHDRAWAL MODAL */}
       <InstructorPayoutModal
